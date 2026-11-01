@@ -2,7 +2,7 @@
 
 My browser userscripts, published on [Greasy Fork](https://greasyfork.org/en/users/567951-stuart-saddler).
 
-The initial import preserves the published scripts exactly, including their versions, metadata, and license declarations. Install from the existing Greasy Fork listings to keep receiving updates through Greasy Fork.
+Imports preserve the Greasy Fork downloads exactly, including their versions and metadata. This repository includes the public scripts and additional unlisted scripts supplied by the author for public hosting. Install from the existing Greasy Fork listings to keep receiving updates through Greasy Fork.
 
 ## Scripts
 
@@ -17,6 +17,15 @@ The initial import preserves the published scripts exactly, including their vers
 | Anime News Network Layout Fix | 1.1 | [anime-news-network-layout-fix.user.js](anime-news-network-layout-fix.user.js) | [Listing](https://greasyfork.org/en/scripts/530579) |
 | ReadTheory: Proficiency Leaderboard | 1.1 | [readtheory-proficiency-leaderboard.user.js](readtheory-proficiency-leaderboard.user.js) | [Listing](https://greasyfork.org/en/scripts/557056) |
 | Reddit Floating Back Button | 1.0 | [reddit-floating-back-button.user.js](reddit-floating-back-button.user.js) | [Listing](https://greasyfork.org/en/scripts/574640) |
+| ReadTheory Average Grade Level Calculator (Past 10 Quizzes) | 1.16 | [readtheory-average-grade-level-calculator.user.js](readtheory-average-grade-level-calculator.user.js) | [Listing](https://greasyfork.org/en/scripts/514010) |
+| Inoreader Feed Manager with Whitelist and Enhanced URL Filtering (Debug Version) | 2.9 | [inoreader-feed-manager.user.js](inoreader-feed-manager.user.js) | [Listing](https://greasyfork.org/en/scripts/522378) |
+| Reddit Sidebar Cleaner + Content Expander | 1.3 | [reddit-sidebar-cleaner-content-expander.user.js](reddit-sidebar-cleaner-content-expander.user.js) | [Listing](https://greasyfork.org/en/scripts/531104) |
+| Reddit Advanced Content Filter (Beta) | 3.8 | [reddit-advanced-content-filter-beta.user.js](reddit-advanced-content-filter-beta.user.js) | [Listing](https://greasyfork.org/en/scripts/542298) |
+| 1337x Enhancements + Ratings | 2026.10.23.1 | [1337x-enhancements-ratings.user.js](1337x-enhancements-ratings.user.js) | [Listing](https://greasyfork.org/en/scripts/546143) |
+| Knowt Flashcards - Printable Double-Sided | 1.2.0 | [knowt-flashcards-printable-double-sided.user.js](knowt-flashcards-printable-double-sided.user.js) | [Listing](https://greasyfork.org/en/scripts/584409) |
+| ReadWorks Book of Knowledge - Comment Exporter | 1.6.0 | [readworks-book-of-knowledge-comment-exporter.user.js](readworks-book-of-knowledge-comment-exporter.user.js) | [Listing](https://greasyfork.org/en/scripts/584410) |
+| ReadWorks Response Assessor v3 | 3.3.20 | [readworks-response-assessor-v3.user.js](readworks-response-assessor-v3.user.js) | [Listing](https://greasyfork.org/en/scripts/589898) |
+| Gmail Clear Conversations | 0.4.1 | [gmail-clear-conversations.user.js](gmail-clear-conversations.user.js) | [Listing](https://greasyfork.org/en/scripts/602917) |
 
 ## Connect the existing Greasy Fork listings
 
@@ -35,6 +44,15 @@ For each existing listing, open **Admin > Source Syncing**, enter its raw URL fr
 | Anime News Network Layout Fix | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/anime-news-network-layout-fix.user.js) |
 | ReadTheory: Proficiency Leaderboard | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/readtheory-proficiency-leaderboard.user.js) |
 | Reddit Floating Back Button | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/reddit-floating-back-button.user.js) |
+| ReadTheory Average Grade Level Calculator (Past 10 Quizzes) | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/readtheory-average-grade-level-calculator.user.js) |
+| Inoreader Feed Manager with Whitelist and Enhanced URL Filtering (Debug Version) | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/inoreader-feed-manager.user.js) |
+| Reddit Sidebar Cleaner + Content Expander | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/reddit-sidebar-cleaner-content-expander.user.js) |
+| Reddit Advanced Content Filter (Beta) | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/reddit-advanced-content-filter-beta.user.js) |
+| 1337x Enhancements + Ratings | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/1337x-enhancements-ratings.user.js) |
+| Knowt Flashcards - Printable Double-Sided | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/knowt-flashcards-printable-double-sided.user.js) |
+| ReadWorks Book of Knowledge - Comment Exporter | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/readworks-book-of-knowledge-comment-exporter.user.js) |
+| ReadWorks Response Assessor v3 | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/readworks-response-assessor-v3.user.js) |
+| Gmail Clear Conversations | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/gmail-clear-conversations.user.js) |
 
 After the source URLs are connected, open [Greasy Fork webhook setup](https://greasyfork.org/en/users/webhook-info) while signed in. In this repository, open **Settings > Webhooks > Add webhook**. Copy the payload URL and generated secret from Greasy Fork, use `application/json`, choose **Just the push event**, and leave **Active** checked. Keep the secret out of this repository.
 
@@ -49,7 +67,7 @@ The first matching webhook changes the script's sync type to **Webhook**. Verify
 
 ## License
 
-Each imported script declares `@license MIT`. Existing author credits and notices are preserved in the script files.
+Licenses and author credits are preserved as provided. Check each script's `@license` header; some imported scripts do not declare a license. This repository does not add a blanket license.
 
 ## References
 
