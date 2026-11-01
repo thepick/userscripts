@@ -1,0 +1,58 @@
+# Userscripts
+
+My browser userscripts, published on [Greasy Fork](https://greasyfork.org/en/users/567951-stuart-saddler).
+
+The initial import preserves the published scripts exactly, including their versions, metadata, and license declarations. Install from the existing Greasy Fork listings to keep receiving updates through Greasy Fork.
+
+## Scripts
+
+| Script | Imported version | Source | Greasy Fork |
+| --- | --- | --- | --- |
+| Reddit Advanced Content Filter | 3.1.0 | [reddit-advanced-content-filter.user.js](reddit-advanced-content-filter.user.js) | [Listing](https://greasyfork.org/en/scripts/516666) |
+| Remove Disable Adblock Nag Screen on 1mov.lol | 1.5 | [remove-disable-adblock-nag-screen.user.js](remove-disable-adblock-nag-screen.user.js) | [Listing](https://greasyfork.org/en/scripts/513207) |
+| Bluesky Content Manager | 3.5.2 | [bluesky-content-manager.user.js](bluesky-content-manager.user.js) | [Listing](https://greasyfork.org/en/scripts/518614) |
+| Bluesky Enhanced Layout | 1.7 | [bluesky-enhanced-layout.user.js](bluesky-enhanced-layout.user.js) | [Listing](https://greasyfork.org/en/scripts/520439) |
+| Bluesky Unified Block & Hide | 1.2 | [bluesky-unified-block-hide.user.js](bluesky-unified-block-hide.user.js) | [Listing](https://greasyfork.org/en/scripts/522022) |
+| DeepSeek Wide Mode | 1.1 | [deepseek-wide-mode.user.js](deepseek-wide-mode.user.js) | [Listing](https://greasyfork.org/en/scripts/524537) |
+| Anime News Network Layout Fix | 1.1 | [anime-news-network-layout-fix.user.js](anime-news-network-layout-fix.user.js) | [Listing](https://greasyfork.org/en/scripts/530579) |
+| ReadTheory: Proficiency Leaderboard | 1.1 | [readtheory-proficiency-leaderboard.user.js](readtheory-proficiency-leaderboard.user.js) | [Listing](https://greasyfork.org/en/scripts/557056) |
+| Reddit Floating Back Button | 1.0 | [reddit-floating-back-button.user.js](reddit-floating-back-button.user.js) | [Listing](https://greasyfork.org/en/scripts/574640) |
+
+## Connect the existing Greasy Fork listings
+
+The repository is ready for synchronization. Greasy Fork synchronization and the GitHub webhook have not been configured as part of this initial import.
+
+For each existing listing, open **Admin > Source Syncing**, enter its raw URL from the table below, choose **Manual** while setting up, and select **Update and sync now**. Use the existing listing so its history, feedback, and installation links stay together.
+
+| Script | Raw URL for Source Syncing |
+| --- | --- |
+| Reddit Advanced Content Filter | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/reddit-advanced-content-filter.user.js) |
+| Remove Disable Adblock Nag Screen on 1mov.lol | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/remove-disable-adblock-nag-screen.user.js) |
+| Bluesky Content Manager | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/bluesky-content-manager.user.js) |
+| Bluesky Enhanced Layout | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/bluesky-enhanced-layout.user.js) |
+| Bluesky Unified Block & Hide | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/bluesky-unified-block-hide.user.js) |
+| DeepSeek Wide Mode | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/deepseek-wide-mode.user.js) |
+| Anime News Network Layout Fix | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/anime-news-network-layout-fix.user.js) |
+| ReadTheory: Proficiency Leaderboard | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/readtheory-proficiency-leaderboard.user.js) |
+| Reddit Floating Back Button | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/reddit-floating-back-button.user.js) |
+
+After the source URLs are connected, open [Greasy Fork webhook setup](https://greasyfork.org/en/users/webhook-info) while signed in. In this repository, open **Settings > Webhooks > Add webhook**. Copy the payload URL and generated secret from Greasy Fork, use `application/json`, choose **Just the push event**, and leave **Active** checked. Keep the secret out of this repository.
+
+The first matching webhook changes the script's sync type to **Webhook**. Verify the connection with an intended, tested script change and a higher `@version`, then check Greasy Fork's code, version, and last successful sync.
+
+## Future updates
+
+- Make and test changes before pushing them to `main`. Once the webhook is connected, changes pushed to the linked files can be published automatically on Greasy Fork.
+- Increase `@version` for each script update. Preserve `@name` and `@namespace` so installed scripts retain their identity.
+- Edit the GitHub files after synchronization is enabled. Direct edits on Greasy Fork can be overwritten by the next synchronization.
+- Greasy Fork controls when a new version is published there. Installed copies update according to each user's userscript manager settings.
+
+## License
+
+Each imported script declares `@license MIT`. Existing author credits and notices are preserved in the script files.
+
+## References
+
+- [Greasy Fork API and webhook documentation](https://greasyfork.org/en/help/api)
+- [Greasy Fork metadata requirements](https://greasyfork.org/en/help/meta-keys)
+- [Greasy Fork webhook setup instructions](https://greasyfork.org/en/users/webhook-info)
