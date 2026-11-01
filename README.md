@@ -27,11 +27,11 @@ Imports preserve the Greasy Fork downloads exactly, including their versions and
 | ReadWorks Response Assessor v3 | 3.3.20 | [readworks-response-assessor-v3.user.js](readworks-response-assessor-v3.user.js) | [Listing](https://greasyfork.org/en/scripts/589898) |
 | Gmail Clear Conversations | 0.4.1 | [gmail-clear-conversations.user.js](gmail-clear-conversations.user.js) | [Listing](https://greasyfork.org/en/scripts/602917) |
 
-## Connect the existing Greasy Fork listings
+## Greasy Fork synchronization
 
-The repository is ready for synchronization. Greasy Fork synchronization and the GitHub webhook have not been configured as part of this initial import.
+All 18 existing Greasy Fork listings are connected to their matching raw files on `main`. Each initial source sync succeeded on November 1, 2026, and all resulting Greasy Fork downloads were verified byte for byte against this repository. Script versions were preserved. The source connections currently use **Manual** syncing; the GitHub webhook is pending setup, so pushes do not yet publish automatically.
 
-For each existing listing, open **Admin > Source Syncing**, enter its raw URL from the table below, choose **Manual** while setting up, and select **Update and sync now**. Use the existing listing so its history, feedback, and installation links stay together.
+The table below records the configured source URLs. To reconnect a listing, open **Admin > Source Syncing**, enter its matching raw URL, choose **Manual** while setting up, and select **Update and sync now**. Use the existing listing so its history, feedback, and installation links stay together.
 
 | Script | Raw URL for Source Syncing |
 | --- | --- |
