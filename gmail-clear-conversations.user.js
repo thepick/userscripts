@@ -13,6 +13,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/602917/Gmail%20Clear%20Conversations.user.js
 // @updateURL https://update.greasyfork.org/scripts/602917/Gmail%20Clear%20Conversations.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (() => {
   'use strict';

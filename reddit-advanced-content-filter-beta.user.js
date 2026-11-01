@@ -16,6 +16,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/542298/Reddit%20Advanced%20Content%20Filter%20%28Beta%29.user.js
 // @updateURL https://update.greasyfork.org/scripts/542298/Reddit%20Advanced%20Content%20Filter%20%28Beta%29.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (async function () {
     'use strict';

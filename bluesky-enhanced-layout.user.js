@@ -11,6 +11,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/520439/Bluesky%20Enhanced%20Layout.user.js
 // @updateURL https://update.greasyfork.org/scripts/520439/Bluesky%20Enhanced%20Layout.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function() {
     'use strict';

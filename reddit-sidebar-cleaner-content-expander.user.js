@@ -11,6 +11,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/531104/Reddit%20Sidebar%20Cleaner%20%2B%20Content%20Expander.user.js
 // @updateURL https://update.greasyfork.org/scripts/531104/Reddit%20Sidebar%20Cleaner%20%2B%20Content%20Expander.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function() {
     'use strict';

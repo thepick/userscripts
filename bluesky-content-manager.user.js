@@ -17,6 +17,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/518614/Bluesky%20Content%20Manager.user.js
 // @updateURL https://update.greasyfork.org/scripts/518614/Bluesky%20Content%20Manager.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (async function () {
 'use strict';

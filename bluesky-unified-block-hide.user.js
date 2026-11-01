@@ -10,6 +10,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/522022/Bluesky%20Unified%20Block%20%20Hide.user.js
 // @updateURL https://update.greasyfork.org/scripts/522022/Bluesky%20Unified%20Block%20%20Hide.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function() {
     'use strict';

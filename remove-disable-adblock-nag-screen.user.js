@@ -10,6 +10,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/513207/Remove%20Disable%20Adblock%20Nag%20Screen%20on%201movlol.user.js
 // @updateURL https://update.greasyfork.org/scripts/513207/Remove%20Disable%20Adblock%20Nag%20Screen%20on%201movlol.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function() {
     'use strict';

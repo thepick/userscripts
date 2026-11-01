@@ -13,6 +13,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/524537/DeepSeek%20Wide%20Mode.user.js
 // @updateURL https://update.greasyfork.org/scripts/524537/DeepSeek%20Wide%20Mode.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function() {
     'use strict';

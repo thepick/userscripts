@@ -15,6 +15,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/584410/ReadWorks%20Book%20of%20Knowledge%20-%20Comment%20Exporter.user.js
 // @updateURL https://update.greasyfork.org/scripts/584410/ReadWorks%20Book%20of%20Knowledge%20-%20Comment%20Exporter.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 /* --------------------------------------------
    ReadWorks Book of Knowledge Comment Exporter

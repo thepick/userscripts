@@ -12,6 +12,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/514010/ReadTheory%20Average%20Grade%20Level%20Calculator%20%28Past%2010%20Quizzes%29.user.js
 // @updateURL https://update.greasyfork.org/scripts/514010/ReadTheory%20Average%20Grade%20Level%20Calculator%20%28Past%2010%20Quizzes%29.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function () {
   "use strict";

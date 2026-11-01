@@ -13,6 +13,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/589898/ReadWorks%20Response%20Assessor%20v3.user.js
 // @updateURL https://update.greasyfork.org/scripts/589898/ReadWorks%20Response%20Assessor%20v3.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function () {
     'use strict';

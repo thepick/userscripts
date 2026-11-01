@@ -11,6 +11,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/584409/Knowt%20Flashcards%20-%20Printable%20Double-Sided.user.js
 // @updateURL https://update.greasyfork.org/scripts/584409/Knowt%20Flashcards%20-%20Printable%20Double-Sided.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function () {
   "use strict";

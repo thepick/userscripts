@@ -9,6 +9,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/530579/Anime%20News%20Network%20Layout%20Fix.user.js
 // @updateURL https://update.greasyfork.org/scripts/530579/Anime%20News%20Network%20Layout%20Fix.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function () {
     'use strict';

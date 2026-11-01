@@ -32,6 +32,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/546143/1337x%20Enhancements%20%2B%20Ratings.user.js
 // @updateURL https://update.greasyfork.org/scripts/546143/1337x%20Enhancements%20%2B%20Ratings.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function() {
     'use strict';

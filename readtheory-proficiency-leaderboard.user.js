@@ -10,6 +10,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/557056/ReadTheory%3A%20Proficiency%20Leaderboard.user.js
 // @updateURL https://update.greasyfork.org/scripts/557056/ReadTheory%3A%20Proficiency%20Leaderboard.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function() {
     'use strict';

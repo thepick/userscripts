@@ -11,6 +11,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/574640/Reddit%20Floating%20Back%20Button.user.js
 // @updateURL https://update.greasyfork.org/scripts/574640/Reddit%20Floating%20Back%20Button.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function () {
     'use strict';

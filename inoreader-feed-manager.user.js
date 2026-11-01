@@ -15,6 +15,7 @@
 // @downloadURL https://update.greasyfork.org/scripts/522378/Inoreader%20Feed%20Manager%20with%20Whitelist%20and%20Enhanced%20URL%20Filtering%20%28Debug%20Version%29.user.js
 // @updateURL https://update.greasyfork.org/scripts/522378/Inoreader%20Feed%20Manager%20with%20Whitelist%20and%20Enhanced%20URL%20Filtering%20%28Debug%20Version%29.meta.js
 // ==/UserScript==
+// Source: https://github.com/thepick/userscripts
 
 (function () {
     'use strict';
