@@ -2,7 +2,7 @@
 
 My browser userscripts, published on [Greasy Fork](https://greasyfork.org/en/users/567951-stuart-saddler).
 
-Imports preserve the Greasy Fork downloads exactly, including their versions and metadata. This repository includes the public scripts and additional unlisted scripts supplied by the author for public hosting. Install from the existing Greasy Fork listings to keep receiving updates through Greasy Fork.
+The initial imports preserved the Greasy Fork downloads exactly, including their versions and metadata. A source-location comment was then added to each script to verify automatic synchronization; behavior and versions were unchanged. This repository includes the public scripts and additional unlisted scripts supplied by the author for public hosting. Install from the existing Greasy Fork listings to keep receiving updates through Greasy Fork.
 
 ## Scripts
 
@@ -29,7 +29,9 @@ Imports preserve the Greasy Fork downloads exactly, including their versions and
 
 ## Greasy Fork synchronization
 
-All 18 existing Greasy Fork listings are connected to their matching raw files on `main`. Each initial source sync succeeded on November 1, 2026, and all resulting Greasy Fork downloads were verified byte for byte against this repository. Script versions were preserved. The source connections currently use **Manual** syncing; the GitHub webhook is pending setup, so pushes do not yet publish automatically.
+All 18 existing Greasy Fork listings are connected to their matching raw files on `main` and use **Webhook** syncing. The active GitHub webhook sends push events as JSON with SSL verification enabled. Its secret is stored in the services, outside this repository.
+
+Verified on November 1, 2026: GitHub's signed ping and a push touching all 18 scripts received HTTP 200 responses. Greasy Fork reported every script updated and no failures. Every resulting Greasy Fork download matched its GitHub source byte for byte, and all versions were preserved. No Greasy Fork listing visibility settings were changed.
 
 The table below records the configured source URLs. To reconnect a listing, open **Admin > Source Syncing**, enter its matching raw URL, choose **Manual** while setting up, and select **Update and sync now**. Use the existing listing so its history, feedback, and installation links stay together.
 
@@ -54,13 +56,13 @@ The table below records the configured source URLs. To reconnect a listing, open
 | ReadWorks Response Assessor v3 | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/readworks-response-assessor-v3.user.js) |
 | Gmail Clear Conversations | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/gmail-clear-conversations.user.js) |
 
-After the source URLs are connected, open [Greasy Fork webhook setup](https://greasyfork.org/en/users/webhook-info) while signed in. In this repository, open **Settings > Webhooks > Add webhook**. Copy the payload URL and generated secret from Greasy Fork, use `application/json`, choose **Just the push event**, and leave **Active** checked. Keep the secret out of this repository.
+To recreate the webhook if needed, open [Greasy Fork webhook setup](https://greasyfork.org/en/users/webhook-info) while signed in. In this repository, open **Settings > Webhooks > Add webhook**. Copy the payload URL and secret from Greasy Fork, use `application/json`, choose **Just the push event**, leave **Active** checked, and keep SSL verification enabled. Keep the secret out of this repository.
 
-The first matching webhook changes the script's sync type to **Webhook**. Verify the connection with an intended, tested script change and a higher `@version`, then check Greasy Fork's code, version, and last successful sync.
+The first matching webhook changes a script's sync type to **Webhook**. This has been verified for every script above. For future releases, check GitHub's webhook delivery response and Greasy Fork's published code and version.
 
 ## Future updates
 
-- Make and test changes before pushing them to `main`. Once the webhook is connected, changes pushed to the linked files can be published automatically on Greasy Fork.
+- Make and test changes before pushing them to `main`. Changes pushed to the linked files can be published automatically on Greasy Fork.
 - Increase `@version` for each script update. Preserve `@name` and `@namespace` so installed scripts retain their identity.
 - Edit the GitHub files after synchronization is enabled. Direct edits on Greasy Fork can be overwritten by the next synchronization.
 - Greasy Fork controls when a new version is published there. Installed copies update according to each user's userscript manager settings.
