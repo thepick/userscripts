@@ -68,6 +68,26 @@ The first matching webhook changes a script's sync type to **Webhook**. This has
 
 ## Future updates
 
+### Reddit Advanced Content Filter 3.2.0
+
+- Remembers up to **5,000 blocked-post decisions for 30 days** in local userscript storage. Cache hits require the same authoritative Reddit post ID, content fingerprint, and filter lists. The cache stores IDs, fingerprints, and reasons, not copied titles or post bodies. Triggers longer than 5,000 characters still filter normally and are rechecked instead of cached, keeping derived records small.
+- Preserves regular-plural, literal-phrase, subreddit, and whitelist-override behavior on old and modern Reddit. Existing `blocklist` and `whitelist` keys migrate without being overwritten. Native saved lists and phrases receive no new size limit; imported backup files are limited to 2 MB.
+- Excludes votes, timestamps, action buttons, and comment controls from content matching. These changing interface labels no longer invalidate unchanged post decisions. Duplicate updates remain batched, and filtering now uses its own `raf-filtered` class so it does not unhide another userscript's content.
+- Adds larger light/dark settings with labeled editors, list search and unique counts, a rule preview, visible recovery errors, keyboard focus wrapping, Escape-to-close, and actions that stay visible on narrow screens.
+- Adds local JSON export/import. Exports include unsaved editor changes and settings only. Imports fill the editors for review before Save changes; import and save operations cannot overlap.
+- Adds search across the complete linked session history, rendering 100 records per page. Session history is retained when filters change and clears on page reload. The persistent decision cache remains bounded independently of that session history.
+- Saves settings as one validated snapshot, applies them without reloading, and restores newly allowed posts. Conflicting edits from another tab are surfaced. Delayed reads cannot undo a newer save; notifications arriving during a read cause a fresh read. Corrupt list fields and revision metadata are recovered independently where possible, with originals retained until an explicit save.
+
+Checks use only Node's standard library and browser fixtures:
+
+```text
+node --check reddit-advanced-content-filter.user.js
+node --test
+node tests/build-reddit-browser-fixture.cjs reddit-fixture.html
+```
+
+Serve the generated HTML on localhost and open it for the old/modern DOM, persistence, storage-race, settings, and history cases. It uses dummy lists and stubbed userscript storage. Relative Reddit URL resolution is adapted only in the fixture because localhost is not reddit.com. Do not commit the generated fixture. The audit's local server can retain the optional `/results` receipt. Live authenticated Reddit and installed userscript-manager behavior still need testing; the attempted public page displayed Reddit's humanity challenge.
+
 ### Bluesky Content Manager 3.6.0
 
 This release remembers blocked posts in local userscript storage and uses saved decisions when the same post appears again. It checks the post's own permalink and a SHA-256 fingerprint of relevant content. Changes to content, filters, account, or followed-account overrides cause a new check. The derived cache keeps up to 5,000 recent blocked decisions for 30 days; it does not store post bodies. Settings and a small, account-specific follows snapshot also stay in local userscript storage. Browsing history in the settings window remains complete for the current page session and renders 50 entries per page.
