@@ -11,7 +11,7 @@ The initial imports preserved the Greasy Fork downloads exactly, including their
 | Reddit Advanced Content Filter | 3.1.0 | [reddit-advanced-content-filter.user.js](reddit-advanced-content-filter.user.js) | [Listing](https://greasyfork.org/en/scripts/516666) |
 | Remove Disable Adblock Nag Screen on 1mov.lol | 1.5 | [remove-disable-adblock-nag-screen.user.js](remove-disable-adblock-nag-screen.user.js) | [Listing](https://greasyfork.org/en/scripts/513207) |
 | Bluesky Content Manager | 3.5.2 | [bluesky-content-manager.user.js](bluesky-content-manager.user.js) | [Listing](https://greasyfork.org/en/scripts/518614) |
-| Bluesky Enhanced Layout | 1.7 | [bluesky-enhanced-layout.user.js](bluesky-enhanced-layout.user.js) | [Listing](https://greasyfork.org/en/scripts/520439) |
+| Bluesky Multi-Column | 1.7 | [bluesky-enhanced-layout.user.js](bluesky-enhanced-layout.user.js) | [Listing](https://greasyfork.org/en/scripts/520439-bluesky-multi-column) |
 | Bluesky Unified Block & Hide | 1.2 | [bluesky-unified-block-hide.user.js](bluesky-unified-block-hide.user.js) | [Listing](https://greasyfork.org/en/scripts/522022) |
 | DeepSeek Wide Mode | 1.1 | [deepseek-wide-mode.user.js](deepseek-wide-mode.user.js) | [Listing](https://greasyfork.org/en/scripts/524537) |
 | Anime News Network Layout Fix | 1.1 | [anime-news-network-layout-fix.user.js](anime-news-network-layout-fix.user.js) | [Listing](https://greasyfork.org/en/scripts/530579) |
@@ -36,6 +36,8 @@ Verified on November 1, 2026: GitHub's signed ping and a push touching all 18 sc
 
 Added November 2, 2026: Reddit Multi-Column Robust is **unlisted** on Greasy Fork, with public source in this repository. It uses the same source-sync connection and webhook. Its userscript metadata points installed copies to Greasy Fork for updates; script identity and behavior are preserved.
 
+Updated November 2, 2026: **Bluesky Multi-Column** replaces the former Bluesky Enhanced Layout code on existing listing **520439**. The stable source filename remains `bluesky-enhanced-layout.user.js`, preserving its webhook connection. Release **2026.11.2.2** imports the current Greasy Fork implementation and keeps its script identity, update links, credits, and MIT license. Future changes should be made in this GitHub file so the existing webhook can publish them to Greasy Fork.
+
 The table below records the configured source URLs. To reconnect a listing, open **Admin > Source Syncing**, enter its matching raw URL, choose **Manual** while setting up, and select **Update and sync now**. Use the existing listing so its history, feedback, and installation links stay together.
 
 | Script | Raw URL for Source Syncing |
@@ -43,7 +45,7 @@ The table below records the configured source URLs. To reconnect a listing, open
 | Reddit Advanced Content Filter | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/reddit-advanced-content-filter.user.js) |
 | Remove Disable Adblock Nag Screen on 1mov.lol | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/remove-disable-adblock-nag-screen.user.js) |
 | Bluesky Content Manager | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/bluesky-content-manager.user.js) |
-| Bluesky Enhanced Layout | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/bluesky-enhanced-layout.user.js) |
+| Bluesky Multi-Column | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/bluesky-enhanced-layout.user.js) |
 | Bluesky Unified Block & Hide | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/bluesky-unified-block-hide.user.js) |
 | DeepSeek Wide Mode | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/deepseek-wide-mode.user.js) |
 | Anime News Network Layout Fix | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/anime-news-network-layout-fix.user.js) |
