@@ -28,6 +28,17 @@ The initial imports preserved the Greasy Fork downloads exactly, including their
 | Gmail Clear Conversations | 0.4.1 | [gmail-clear-conversations.user.js](gmail-clear-conversations.user.js) | [Listing](https://greasyfork.org/en/scripts/602917) |
 | Reddit Multi-Column Robust (unlisted) | 2026.11.2.2 | [reddit-multi-column-robust.user.js](reddit-multi-column-robust.user.js) | [Listing](https://greasyfork.org/en/scripts/603358) |
 
+## AI test editions — GitHub only
+
+These separate editions add Liquid Ultra topic filtering, optional picture analysis, Preview/Hide actions, and review history. They retain the original filters and whitelist overrides. AI starts disabled; configure your own OpenRouter key and topics. Keys stay in userscript-manager storage and are excluded from settings exports. Disable the original filter for that site while testing its AI edition.
+
+| Script | Version | Source |
+| --- | --- | --- |
+| Reddit Advanced Content Filter AI | 0.1.0 | [reddit-advanced-content-filter-ai.user.js](reddit-advanced-content-filter-ai.user.js) |
+| BlueSky Content Manager AI | 0.1.8 | [bluesky-content-manager-ai.user.js](bluesky-content-manager-ai.user.js) |
+
+Greasy Fork publication is on hold. This upload does not create or relist either AI edition there. The original non-AI scripts and their synchronization remain unchanged. These are testing builds; model decisions can be wrong, and enabled AI sends eligible post content to OpenRouter and its provider.
+
 ## Greasy Fork synchronization
 
 The Greasy Fork listings in the tables are connected to their matching raw files on `main` and use **Webhook** syncing. The active GitHub webhook sends push events as JSON with SSL verification enabled. Its secret is stored in the services, outside this repository.
