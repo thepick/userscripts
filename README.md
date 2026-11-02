@@ -68,6 +68,28 @@ The first matching webhook changes a script's sync type to **Webhook**. This has
 
 ## Future updates
 
+### Bluesky Content Manager 3.6.0
+
+This release remembers blocked posts in local userscript storage and uses saved decisions when the same post appears again. It checks the post's own permalink and a SHA-256 fingerprint of relevant content. Changes to content, filters, account, or followed-account overrides cause a new check. The derived cache keeps up to 5,000 recent blocked decisions for 30 days; it does not store post bodies. Settings and a small, account-specific follows snapshot also stay in local userscript storage. Browsing history in the settings window remains complete for the current page session and renders 50 entries per page.
+
+Filtering now rechecks late-loaded text, images, descriptions, labels, and inserted post wrappers. It restores newly allowed posts and keeps its hiding class separate from other userscripts. Keyword patterns are compiled once, duplicate updates share a processing queue, and menu/history refreshes are batched. Manual `@handle` or `@did:...` entries match author identities from validated own-profile links; content terms retain their whitelist precedence. Repost headers and quoted-post links are excluded from the post's identity.
+
+The settings window supports keyboard navigation and Escape, follows the site's light/dark preference, and fits narrow screens. It includes list counts and search, a matching preview, local JSON export/import, a searchable linked session history, visible recovery errors, and Save changes without a page reload. Imports fill the editors for review before saving. Settings are written as a single validated snapshot, while existing legacy keys remain available for migration and recovery.
+
+Matching rules remain compatible with 3.5.2: plain English words of at least three letters allow `s`, `es`, `ed`, `ing`, `er`, and `ers`; other entries use literal substring matching. For example, `city` does not match `cities`, while `cat` matches `cater`. The matching preview makes these rules explicit. Post action buttons, counters, and timestamp labels are excluded from content matching and fingerprinting.
+
+Followed accounts are fetched through the public Bluesky AppView without access tokens. The explicit active account is used, and stale responses from a previous account are ignored. A recent local snapshot allows quick startup; follows refresh while browsing and through a settings button. If no valid follows list is available, filtering pauses while the enabled followed-account override loads, with status and Retry controls. When a refresh fails after a successful load, the last list stays active and the failure is shown.
+
+Focused checks use Node's built-in test runner, without installed dependencies:
+
+```text
+node --check bluesky-content-manager.user.js
+node --test
+node tests/build-bluesky-browser-fixture.cjs browser-fixture.html
+```
+
+Serve the generated HTML on localhost and open it to run the DOM, cache, storage, follow/account, and settings regressions. It uses dummy settings and stubbed public API responses, not a signed-in Bluesky account. Results appear in the page; the audit's local server can also save the `/results` receipt. Do not commit the generated fixture. Browser tests do not replace checking the installed userscript manager and authenticated Bluesky.
+
 - Make and test changes before pushing them to `main`. Changes pushed to the linked files can be published automatically on Greasy Fork.
 - Increase `@version` for each script update. Preserve `@name` and `@namespace` so installed scripts retain their identity.
 - Edit the GitHub files after synchronization is enabled. Direct edits on Greasy Fork can be overwritten by the next synchronization.
