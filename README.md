@@ -6,7 +6,7 @@ The initial imports preserved the Greasy Fork downloads exactly, including their
 
 ## Scripts
 
-| Script | Imported version | Source | Greasy Fork |
+| Script | Initial/imported version | Source | Greasy Fork |
 | --- | --- | --- | --- |
 | Reddit Advanced Content Filter | 3.1.0 | [reddit-advanced-content-filter.user.js](reddit-advanced-content-filter.user.js) | [Listing](https://greasyfork.org/en/scripts/516666) |
 | Remove Disable Adblock Nag Screen on 1mov.lol | 1.5 | [remove-disable-adblock-nag-screen.user.js](remove-disable-adblock-nag-screen.user.js) | [Listing](https://greasyfork.org/en/scripts/513207) |
@@ -26,12 +26,15 @@ The initial imports preserved the Greasy Fork downloads exactly, including their
 | ReadWorks Book of Knowledge - Comment Exporter | 1.6.0 | [readworks-book-of-knowledge-comment-exporter.user.js](readworks-book-of-knowledge-comment-exporter.user.js) | [Listing](https://greasyfork.org/en/scripts/584410) |
 | ReadWorks Response Assessor v3 | 3.3.20 | [readworks-response-assessor-v3.user.js](readworks-response-assessor-v3.user.js) | [Listing](https://greasyfork.org/en/scripts/589898) |
 | Gmail Clear Conversations | 0.4.1 | [gmail-clear-conversations.user.js](gmail-clear-conversations.user.js) | [Listing](https://greasyfork.org/en/scripts/602917) |
+| Reddit Multi-Column Robust (unlisted) | 2026.11.2.2 | [reddit-multi-column-robust.user.js](reddit-multi-column-robust.user.js) | [Listing](https://greasyfork.org/en/scripts/603358) |
 
 ## Greasy Fork synchronization
 
-All 18 existing Greasy Fork listings are connected to their matching raw files on `main` and use **Webhook** syncing. The active GitHub webhook sends push events as JSON with SSL verification enabled. Its secret is stored in the services, outside this repository.
+The Greasy Fork listings in the tables are connected to their matching raw files on `main` and use **Webhook** syncing. The active GitHub webhook sends push events as JSON with SSL verification enabled. Its secret is stored in the services, outside this repository.
 
 Verified on November 1, 2026: GitHub's signed ping and a push touching all 18 scripts received HTTP 200 responses. Greasy Fork reported every script updated and no failures. Every resulting Greasy Fork download matched its GitHub source byte for byte, and all versions were preserved. No Greasy Fork listing visibility settings were changed.
+
+Added November 2, 2026: Reddit Multi-Column Robust is **unlisted** on Greasy Fork, with public source in this repository. It uses the same source-sync connection and webhook. Its userscript metadata points installed copies to Greasy Fork for updates; script identity and behavior are preserved.
 
 The table below records the configured source URLs. To reconnect a listing, open **Admin > Source Syncing**, enter its matching raw URL, choose **Manual** while setting up, and select **Update and sync now**. Use the existing listing so its history, feedback, and installation links stay together.
 
@@ -55,6 +58,7 @@ The table below records the configured source URLs. To reconnect a listing, open
 | ReadWorks Book of Knowledge - Comment Exporter | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/readworks-book-of-knowledge-comment-exporter.user.js) |
 | ReadWorks Response Assessor v3 | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/readworks-response-assessor-v3.user.js) |
 | Gmail Clear Conversations | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/gmail-clear-conversations.user.js) |
+| Reddit Multi-Column Robust (unlisted) | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/reddit-multi-column-robust.user.js) |
 
 To recreate the webhook if needed, open [Greasy Fork webhook setup](https://greasyfork.org/en/users/webhook-info) while signed in. In this repository, open **Settings > Webhooks > Add webhook**. Copy the payload URL and secret from Greasy Fork, use `application/json`, choose **Just the push event**, leave **Active** checked, and keep SSL verification enabled. Keep the secret out of this repository.
 

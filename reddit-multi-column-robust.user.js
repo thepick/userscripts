@@ -1,10 +1,13 @@
 // ==UserScript==
 // @name         Reddit Multi-Column Robust
 // @namespace    https://github.com/thepick/reddit-multi-column
-// @version      2026.11.2.1
+// @version      2026.11.2.2
 // @description  Configurable Reddit masonry columns with navigation recovery and sidebar controls.
 // @author       Pedro; thepick
 // @license      MIT
+// @homepageURL  https://github.com/thepick/userscripts/blob/main/reddit-multi-column-robust.user.js
+// @downloadURL  https://update.greasyfork.org/scripts/603358/Reddit%20Multi-Column%20Robust.user.js
+// @updateURL    https://update.greasyfork.org/scripts/603358/Reddit%20Multi-Column%20Robust.meta.js
 // @match        https://www.reddit.com/*
 // @run-at       document-start
 // @noframes
