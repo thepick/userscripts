@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Advanced Content Filter AI
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      0.1.1
+// @version      0.1.2
 // @description  Optional Liquid Ultra AI topic and picture filtering, with keyword/subreddit blocking, whitelist overrides, preview, history, and local backups.
 // @author       Stuart Saddler (locally revised)
 // @license      MIT
@@ -959,7 +959,10 @@ const aiSessionHides=new Map();
 function aiAccount(){
   const link=document.querySelector('#header-bottom-right .user a, header a[href^="/user/"], header a[href^="https://www.reddit.com/user/"]');
   const name=link?.getAttribute('href')?.match(/\/user\/([^/?#]+)/i)?.[1];
-  return name?name.toLowerCase():aiSession;
+  if(name)return name.toLowerCase();
+  // Keep the unknown-account fallback stable when this tab reloads or returns from a post.
+  try{const key='rafaiAccountSessionV1',saved=sessionStorage.getItem(key);if(/^session:[a-f0-9-]{36}$/.test(saved||''))return saved;sessionStorage.setItem(key,aiSession);}catch(_){}
+  return aiSession;
 }
 function aiEnvironment(){return JSON.stringify([location.pathname,location.search,aiAccount()]);}
 function aiScope(){

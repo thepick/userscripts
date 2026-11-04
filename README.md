@@ -34,10 +34,12 @@ These separate editions use Liquid Ultra for topic filtering and Gemini 2.5 Flas
 
 | Script | Version | Source |
 | --- | --- | --- |
-| Reddit Advanced Content Filter AI | 0.1.1 | [reddit-advanced-content-filter-ai.user.js](reddit-advanced-content-filter-ai.user.js) |
+| Reddit Advanced Content Filter AI | 0.1.2 | [reddit-advanced-content-filter-ai.user.js](reddit-advanced-content-filter-ai.user.js) |
 | BlueSky Content Manager AI | 0.1.9 | [bluesky-content-manager-ai.user.js](bluesky-content-manager-ai.user.js) |
 
 When picture analysis is enabled, Gemini receives eligible pictures and returns descriptions; Liquid receives the post text and those descriptions, applies topic exceptions, and makes the final filtering decision. Gemini receives no original post text or user topics, and Liquid receives no image data. Both stages use the existing OpenRouter key and count toward the existing daily limits. The key must permit both models. Failed or incomplete scans keep posts visible. Updating preserves saved preferences and credentials; the existing picture toggle controls Gemini.
+
+Reddit AI v0.1.2 fixes repeated AI requests after returning to a feed when Reddit's account header is unavailable. The fallback identity now survives navigation and reloads in the same tab. Saved decisions remain bounded to 1,000 entries and seven days; changed content or topics require a new check. Identified accounts remain separate, and unidentified independent tabs use separate identities. When tab storage is blocked, the fallback lasts only for the current document.
 
 Greasy Fork publication is on hold. This upload does not create or relist either AI edition there. The original non-AI scripts and their synchronization remain unchanged. These are testing builds; model decisions can be wrong, and enabled AI sends eligible post content to OpenRouter and its provider.
 
