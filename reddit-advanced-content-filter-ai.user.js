@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Advanced Content Filter AI
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      0.1.2
+// @version      0.1.3
 // @description  Optional Liquid Ultra AI topic and picture filtering, with keyword/subreddit blocking, whitelist overrides, preview, history, and local backups.
 // @author       Stuart Saddler (locally revised)
 // @license      MIT
@@ -138,7 +138,7 @@
         const epoch = ++ruleEpoch;
         postStates = new WeakMap();
         resetAI();
-        contextReady = (canRemember ? fingerprint(JSON.stringify([1, blocklistArr, whitelistArr])) : Promise.resolve('')).then(context => {
+        contextReady = (canRemember ? fingerprint(JSON.stringify([2, blocklistArr, whitelistArr])) : Promise.resolve('')).then(context => {
             if (epoch === ruleEpoch) ruleContext = context;
         });
         return contextReady;
@@ -267,7 +267,30 @@
         return value.trim().toLowerCase().replace(/^r\//, '');
     }
 
-    function getPostText(post) {
+    function getPostEvidence(post) {
+        const parts = [];
+        const articleLinks = 'a[data-click-id="body"], a[slot="full-post-link"], a.title, a.thumbnail, a[slot="post-media-container"], [slot="post-media-container"] a[href]';
+        const excluded = interfaceText + ', header, [slot="credit-bar"], .tagline, [data-testid="post_author_link"], a[href*="/user/"], a[href*="/avatar/"]';
+        for (const node of post.querySelectorAll('img[alt], a[title], video[title]')) {
+            if (node.closest(excluded) || (node.tagName === 'IMG' && !aiImageElement(node))) continue;
+            if (node.tagName === 'A' && !node.matches(articleLinks) && !node.closest(textAreas)) continue;
+            const text = node.getAttribute(node.tagName === 'IMG' ? 'alt' : 'title');
+            if (text?.trim()) parts.push(text.trim());
+        }
+        const urls = [postMetadata(post).getAttribute('content-href')];
+        for (const link of post.querySelectorAll(articleLinks)) if (!link.closest(excluded)) urls.push(link.getAttribute('href'));
+        for (const value of new Set(urls)) {
+            if (!value) continue;
+            try {
+                const url = new URL(value, location.href);
+                if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hostname === 'reddit.com' || url.hostname.endsWith('.reddit.com')) continue;
+                parts.push(decodeURIComponent(url.pathname).replace(/[-_/]+/g, ' '));
+            } catch (_) {}
+        }
+        return parts;
+    }
+
+    function getPostText(post, includeEvidence = true) {
         const parts = [];
         function visit(node) {
             if (node.nodeType === 3) { parts.push(node.data); return; }
@@ -279,6 +302,7 @@
             if (boundary) parts.push(' ');
         }
         visit(post);
+        if (includeEvidence) for (const text of getPostEvidence(post)) parts.push(' ' + text);
         return parts.join('').toLowerCase();
     }
 
@@ -413,7 +437,7 @@
             }
         });
         observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true,
-            attributeFilter: ['post-title', 'subreddit-prefixed-name', 'subreddit-name', 'permalink', 'content-href', 'href', 'id', 'data-fullname', 'name', 'slot', 'data-testid', 'class', 'src', 'srcset', 'alt', 'subreddit-type', 'data-subreddit-type'] });
+            attributeFilter: ['post-title', 'subreddit-prefixed-name', 'subreddit-name', 'permalink', 'content-href', 'href', 'id', 'data-fullname', 'name', 'slot', 'data-testid', 'class', 'src', 'srcset', 'alt', 'title', 'poster', 'subreddit-type', 'data-subreddit-type'] });
         return observer;
     }
 
@@ -438,9 +462,17 @@
         return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
+    function foldText(value) {
+        return value.normalize('NFKC').replace(/[\u00AD\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '').toLowerCase();
+    }
+
+    function phraseText(value) {
+        return value.replace(/[\s\p{Pd}_]+/gu, ' ');
+    }
+
     function compileRules(entries) {
-        return entries.map(entry => {
-            if (entry.includes(' ')) return { phrase: entry };
+        return entries.map(entry => foldText(entry).trim()).filter(Boolean).map(entry => {
+            if (/\s/.test(entry)) return { phrase: entry, normalizedPhrase: phraseText(entry) };
             const variants = [entry];
             // shortcut: regular English plurals only; enter irregular forms separately.
             if (/^[a-z]+$/.test(entry)) {
@@ -454,9 +486,11 @@
     }
 
     function matchBlock(text, rules) {
+        text = foldText(text);
+        const phrases = phraseText(text);
         for (const rule of rules) {
             if (rule.phrase !== undefined) {
-                if (text.includes(rule.phrase)) return rule.phrase;
+                if (text.includes(rule.phrase) || phrases.includes(rule.normalizedPhrase)) return rule.phrase;
             } else {
                 const match = rule.regex.exec(text);
                 if (match) return match[2];
@@ -532,7 +566,7 @@
                             <textarea id="raf-whitelist" spellcheck="false" aria-describedby="raf-white-help raf-white-count"></textarea><p class="raf-help" id="raf-white-count" aria-live="polite"></p>
                             <div class="raf-find"><input type="search" id="raf-white-search" aria-label="Find in whitelist" placeholder="Find in whitelist"><button type="button" id="raf-white-next">Next match</button></div></div>
                     </section>
-                    <section class="raf-section"><h3>Check a matching rule</h3><p class="raf-help">Single words match whole words and common regular plurals: city matches cities, and cat does not match cater. Phrases match literal substrings. Enter irregular forms separately.</p>
+                    <section class="raf-section"><h3>Check a matching rule</h3><p class="raf-help">Single words match whole words and common regular plurals: city matches cities, and cat does not match cater. Phrases match substrings, including equivalent whitespace, dashes, and underscores between words. Fullwidth letters and invisible word-splitting characters are normalized. Enter irregular forms separately.</p>
                         <label for="raf-preview">Sample title or text</label><input type="text" id="raf-preview"><p id="raf-preview-result" class="raf-help" role="status">Enter sample text to check the lists above. Subreddit metadata is checked separately on real posts.</p></section>
                     <section class="raf-section"><h3>Local memory and backup</h3><p id="raf-memory-status" class="raf-help"></p>
                         <div class="raf-row"><button type="button" id="raf-clear-memory">Clear remembered decisions</button><button type="button" id="raf-export">Export settings</button><button type="button" id="raf-import">Import settings</button><input type="file" id="raf-import-file" accept="application/json,.json" hidden></div>
@@ -705,7 +739,7 @@ const AI_OLD=typeof location==='object'&&location.hostname==='old.reddit.com';
 const AI_KEY='rafaiOpenRouterKeyV1', AI_CACHE='rafaiAIResultsV1'+(AI_OLD?'Old':''), AI_USAGE='rafaiUsageV1'+(AI_OLD?'Old':''), AI_KEEPS='rafaiKeepsV1'+(AI_OLD?'Old':''), AI_PACING='rafaiDecisionPacingV1'+(AI_OLD?'Old':'');
 const AI_OTHER_PACING='rafaiDecisionPacingV1'+(AI_OLD?'':'Old');
 const AI_MIN_GAP=250;
-const AI_POLICY=5;
+const AI_POLICY=6;
 const AI_MODEL='~liquid/d1-ultra-latest', AI_RESERVE=.005, AI_AGE=7*86400000;
 const aiDefaults={enabled:false,mode:'preview',scope:'all',analyzeImages:false,topics:[],budget:.10,requestLimit:200};
 let aiKey='',aiBusy=false,aiCooldown=0,aiMessage='AI is off.',aiGeneration=0,lastAIEnvironment='',aiScrollTimer=null,aiLoadFrame=null,aiViewportObserver=null,aiMenuWaiting=false;
@@ -845,13 +879,13 @@ function watchAIPost(post){
 async function keptAI(key){const keeps=aiJSON(AI_KEEPS,[]);if(!Array.isArray(keeps))throw Error('Saved keep overrides are invalid. Clear AI memory to recover.');return keeps.includes(key);}
 async function scheduleAI(post,data,context){
   if(!settings.ai.enabled||!aiKey||!settings.ai.topics.length||!aiEligible(post)||aiAllowed(post,data)||!data.identity){clearAIPanel(post);aiJobs.delete(post);return;}
-  const text=aiText(post),images=aiImages(post,settings.ai.analyzeImages);if(!images.length&&text.replace(/https?:\/\/\S+/g,'').trim().length<20){clearAIPanel(post);return;}
+  const text=aiText(post),keepText=aiText(post,true),images=aiImages(post,settings.ai.analyzeImages),legacyImages=aiImages(post,settings.ai.analyzeImages,true);if(!images.length&&text.replace(/https?:\/\/\S+/g,'').trim().length<20){clearAIPanel(post);return;}
   const generation=aiGeneration,environment=aiEnvironment(),snapshot=JSON.stringify(data),topics=[...settings.ai.topics],account=aiAccount();
-  const [key,keepKey]=await Promise.all([fingerprint(JSON.stringify([AI_POLICY,AI_MODEL,AI_VISION_MODEL,topics,account,text,images])),fingerprint(JSON.stringify([account,data.url,text,...(images.length?[images]:[])]))]);
+  const [key,keepKey,legacyKeepKey]=await Promise.all([fingerprint(JSON.stringify([AI_POLICY,AI_MODEL,AI_VISION_MODEL,topics,account,text,images,data.title,data.content,data.subreddit])),fingerprint(JSON.stringify([account,data.url,text,images,data.title,data.content,data.subreddit])),fingerprint(JSON.stringify([account,data.url,keepText,...(legacyImages.length?[legacyImages]:[])]))]);
   const job={post,text,topics,images,key,keepKey,context,generation,environment,snapshot,url:data.url};if(!aiValid(job))return;
   watchAIPost(post);
   const previous=aiPanels.get(post);if(previous&&previous.dataset.rafaiKey!==key)clearAIPanel(post);
-  try{const kept=await keptAI(keepKey);if(!aiValid(job))return;if(kept){clearAIPanel(post);return;}}catch(error){aiMessage=error.message;updateAIStatus();return;}
+  try{const kept=await keptAI(keepKey)||(keepKey!==legacyKeepKey&&await keptAI(legacyKeepKey));if(!aiValid(job))return;if(kept){clearAIPanel(post);return;}}catch(error){aiMessage=error.message;updateAIStatus();return;}
   if(!aiValid(job))return;
   const cached=aiResults.get(key);if(cached){try{if(Date.now()-cached.at<0||Date.now()-cached.at>=AI_AGE)throw Error();renderAI(job,parseAIResult(cached));return;}catch(_){aiResults.delete(key);}}
   const until=aiTemporary.get(key);if(until&&until>Date.now())return;
@@ -907,7 +941,7 @@ async function drainAI(){
   }}finally{aiBusy=false;updateAIStatus();}
 }
 function mountAISettings(dialog){
-  const section=uiNode('section','raf-section');section.dataset.redditFilterUi='true';section.innerHTML=`<h3>AI topics to hide</h3><p class="raf-help" id="rafai-ai-help">Enter topics or describe what to hide, one per line. AI checks meaning, including related subjects without these exact words. Only the main topic counts; incidental mentions stay visible.</p><label class="rafai-ai-check"><input id="rafai-ai-enabled" type="checkbox"> Enable AI topic filtering</label><label class="rafai-ai-check"><input id="rafai-ai-images" type="checkbox"> Analyze attached pictures and article thumbnails</label><p class="raf-help">Optional: Gemini 2.5 Flash-Lite scans up to four Reddit-hosted post pictures. Liquid receives text descriptions and makes the final filtering decision. Images add to request cost. Avatars, private URLs, and video are excluded.</p><label for="rafai-ai-topics">Topics</label><textarea id="rafai-ai-topics" aria-describedby="rafai-ai-help" placeholder="Sports&#10;US elections and party politics&#10;Donald Trump" spellcheck="false"></textarea><div class="raf-editors"><div><label for="rafai-ai-mode">Action</label><select id="rafai-ai-mode"><option value="preview">Preview — label matches, keep posts visible</option><option value="hide">Hide — remove matches completely</option></select></div><input id="rafai-ai-scope" type="hidden" value="all"><div><label for="rafai-ai-budget">Daily budget (USD, UTC)</label><input id="rafai-ai-budget" type="number" min="0.01" max="10" step="0.01"></div><div><label for="rafai-ai-limit">Daily request limit (UTC)</label><input id="rafai-ai-limit" type="number" min="1" max="5000" step="1"></div></div><p class="raf-help">Liquid d1-ultra Latest makes topic decisions; Gemini 2.5 Flash-Lite scans pictures through OpenRouter. New requests follow the latest Ultra model. Match scores are model estimates, not guaranteed accuracy; uncertain matches remain visible. The daily budget is divided equally between www and Old Reddit; unused shares do not transfer. Odd request limits give www one extra request (a limit of 1 gives Old Reddit none). Memory and Keep overrides are separate per address. Same-address tabs coordinate requests; provider pauses are shared between addresses, while simultaneous starts across the two addresses remain possible. When enabled, visible post text, article previews, image descriptions, and your topics are sent to OpenRouter and its provider. With image analysis enabled, this script downloads the attached pictures and article thumbnails from permitted Reddit image hosts and sends the image data to Gemini. Liquid receives only text, including Gemini's observations. Your API key is sent only to OpenRouter. No full articles or Reddit login tokens are sent. Whitelist overrides bypass both filters; literal keyword and subreddit blocks run before AI. AI scans home and subreddit feeds, not comments, profiles, search, chat, or messages. Known private community cards are skipped; feed cards with no privacy metadata may still be sent. Only enable AI for feeds you are comfortable sharing.</p><p class="raf-help">Each Gemini scan reserves $0.005. Each Liquid request reserves $0.005 per included post, then reconciled with reported cost. Failed attempts or missing cost reports retain that allowance for the day. Both stages count toward the daily request limit. Visual descriptions are cached for this page session; final decisions keep their existing local memory. Local limits are best effort; use an OpenRouter key spending limit for a firm account cap. Errors, insufficient text, and uncertain results keep posts visible. The review history shows the post, match score, model, and rules checked; this model does not generate evidence quotes. Text-only requests group up to three queued posts; picture posts use Gemini first, then Liquid, with shared pacing across tabs. An incomplete or failed picture scan keeps that post visible. Rate limits pause checks and retry automatically. Scanning pauses while settings are open.</p><label for="rafai-ai-key">Your OpenRouter API key</label><input id="rafai-ai-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste a new key to replace the saved key"><p class="raf-help" id="rafai-ai-key-status"></p><div class="raf-row"><button id="rafai-ai-save-key" type="button">Save API key</button><button id="rafai-ai-remove-key" type="button">Remove API key</button><button id="rafai-ai-retry" type="button">Retry AI checks</button><button id="rafai-ai-clear" type="button">Clear AI memory and keep overrides</button></div><p class="raf-status" id="rafai-ai-status" role="status" aria-live="polite"></p><p class="raf-help">API keys stay in this script's userscript-manager storage and are excluded from exports. Backups from the original Reddit Filter can import your existing lists. Disable the original script while testing this one so its filters do not hide posts separately.</p><details><summary>Recent AI matches this session</summary><ul class="raf-history" id="rafai-ai-history"></ul></details>`;
+  const section=uiNode('section','raf-section');section.dataset.redditFilterUi='true';section.innerHTML=`<h3>AI topics to hide</h3><p class="raf-help" id="rafai-ai-help">Enter topics or describe what to hide, one per line. AI checks meaning, including related subjects without these exact words. Only the main topic counts; incidental mentions stay visible.</p><label class="rafai-ai-check"><input id="rafai-ai-enabled" type="checkbox"> Enable AI topic filtering</label><label class="rafai-ai-check"><input id="rafai-ai-images" type="checkbox"> Analyze attached pictures, thumbnails, and video posters</label><p class="raf-help">Optional: Gemini 2.5 Flash-Lite scans up to four Reddit-hosted post pictures. Liquid receives text descriptions and makes the final filtering decision. Images add to request cost. Avatars and private URLs are excluded. Video poster images can be scanned; video playback is not sent.</p><label for="rafai-ai-topics">Topics</label><textarea id="rafai-ai-topics" aria-describedby="rafai-ai-help" placeholder="Sports&#10;US elections and party politics&#10;Donald Trump" spellcheck="false"></textarea><div class="raf-editors"><div><label for="rafai-ai-mode">Action</label><select id="rafai-ai-mode"><option value="preview">Preview — label matches, keep posts visible</option><option value="hide">Hide — remove matches completely</option></select></div><input id="rafai-ai-scope" type="hidden" value="all"><div><label for="rafai-ai-budget">Daily budget (USD, UTC)</label><input id="rafai-ai-budget" type="number" min="0.01" max="10" step="0.01"></div><div><label for="rafai-ai-limit">Daily request limit (UTC)</label><input id="rafai-ai-limit" type="number" min="1" max="5000" step="1"></div></div><p class="raf-help">Liquid d1-ultra Latest makes topic decisions; Gemini 2.5 Flash-Lite scans pictures through OpenRouter. New requests follow the latest Ultra model. Match scores are model estimates, not guaranteed accuracy; uncertain matches remain visible. The daily budget is divided equally between www and Old Reddit; unused shares do not transfer. Odd request limits give www one extra request (a limit of 1 gives Old Reddit none). Memory and Keep overrides are separate per address. Same-address tabs coordinate requests; provider pauses are shared between addresses, while simultaneous starts across the two addresses remain possible. When enabled, visible post text, article previews and link paths, image descriptions, and your topics are sent to OpenRouter and its provider. With image analysis enabled, this script downloads the attached pictures and article thumbnails from permitted Reddit image hosts and sends the image data to Gemini. Liquid receives only text, including Gemini's observations. Your API key is sent only to OpenRouter. No full articles or Reddit login tokens are sent. Whitelist overrides bypass both filters; literal keyword and subreddit blocks run before AI. AI scans home and subreddit feeds, not comments, profiles, search, chat, or messages. Known private community cards are skipped; feed cards with no privacy metadata may still be sent. Only enable AI for feeds you are comfortable sharing.</p><p class="raf-help">Each Gemini scan reserves $0.005. Each Liquid request reserves $0.005 per included post, then reconciled with reported cost. Failed attempts or missing cost reports retain that allowance for the day. Both stages count toward the daily request limit. Visual descriptions are cached for this page session; final decisions keep their existing local memory. Local limits are best effort; use an OpenRouter key spending limit for a firm account cap. Errors, insufficient text, and uncertain results keep posts visible. The review history shows the post, match score, model, and rules checked; this model does not generate evidence quotes. Text-only requests group up to three queued posts; picture posts use Gemini first, then Liquid, with shared pacing across tabs. An incomplete or failed picture scan keeps that post visible. Rate limits pause checks and retry automatically. Scanning pauses while settings are open.</p><label for="rafai-ai-key">Your OpenRouter API key</label><input id="rafai-ai-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste a new key to replace the saved key"><p class="raf-help" id="rafai-ai-key-status"></p><div class="raf-row"><button id="rafai-ai-save-key" type="button">Save API key</button><button id="rafai-ai-remove-key" type="button">Remove API key</button><button id="rafai-ai-retry" type="button">Retry AI checks</button><button id="rafai-ai-clear" type="button">Clear AI memory and keep overrides</button></div><p class="raf-status" id="rafai-ai-status" role="status" aria-live="polite"></p><p class="raf-help">API keys stay in this script's userscript-manager storage and are excluded from exports. Backups from the original Reddit Filter can import your existing lists. Disable the original script while testing this one so its filters do not hide posts separately.</p><details><summary>Recent AI matches this session</summary><ul class="raf-history" id="rafai-ai-history"></ul></details>`;
   dialog.querySelector('#raf-errors').after(section);const find=id=>section.querySelector('#rafai-ai-'+id),value=settings.ai;
   find('enabled').checked=value.enabled;find('images').checked=value.analyzeImages;find('topics').value=value.topics.join('\n');find('mode').value=value.mode;find('scope').value=value.scope;find('budget').value=value.budget;find('limit').value=value.requestLimit;
   updateAIStatus=()=>{if(!section.isConnected)return;find('key-status').textContent=aiKey?'An API key is saved. Leave this field blank to keep it.':'No API key saved. AI cannot send requests.';let usage='';try{const u=readAIUsage();usage=` Today on this address: ${u.requests} requests, $${u.cost.toFixed(5)} charged or reserved.`;}catch(error){usage=error.message;}find('status').textContent=aiMessage+' This session: '+aiChecked.size+' posts classified; '+aiJobs.size+' queued. Scanning pauses while settings are open.'+usage;const list=find('history');list.replaceChildren();for(const row of [...aiHistory.values()].reverse()){const li=uiNode('li'),a=uiNode('a','',row.title||row.topic);a.href=row.url;a.target='_blank';a.rel='noopener noreferrer';li.append(a,uiNode('p','raf-help',`${row.mode==='preview'?'Preview match':'Hide match'}: ${row.evidence}`));list.append(li);}if(!list.children.length)list.append(uiNode('li','raf-help','No AI matches yet.'));};
@@ -935,9 +969,28 @@ function aiImageElement(img){
   const w=img.naturalWidth||0,h=img.naturalHeight||0;
   return !(w>0&&h>0&&(w<60||h<40));
 }
-function aiImages(post,enabled){
+function aiSrcsetURL(value){
+  let best='',largest=0;
+  for(const candidate of (value||'').split(',')){
+    const match=candidate.trim().match(/^(\S+)(?:\s+(\d+(?:\.\d+)?)(w|x))?$/);if(!match)continue;
+    const size=Number(match[2]||1),url=aiImageURL(match[1]);
+    if(url&&size>largest&&(match[3]!=='w'||Number.isInteger(size))){best=url;largest=size;}
+  }
+  return best;
+}
+function aiImages(post,enabled,legacyKeep=false){
   if(!enabled)return [];
-  const images=new Set();for(const img of post.querySelectorAll('img')){if(!aiImageElement(img))continue;const source=aiImageURL(img.currentSrc)||aiImageURL(img.getAttribute('src'));if(source)images.add(source);if(images.size===4)break;}return [...images];
+  const images=new Set(),push=value=>{if(images.size<4){const url=aiImageURL(value);if(url)images.add(url);}};
+  for(const img of post.querySelectorAll('img')){
+    if(!aiImageElement(img))continue;
+    push(aiImageURL(img.currentSrc)||aiImageURL(img.getAttribute('src'))||(!legacyKeep&&aiSrcsetURL(img.getAttribute('srcset'))));
+    if(images.size===4)break;
+  }
+  if(!legacyKeep)for(const video of post.querySelectorAll('video[poster]')){
+    if(!video.closest(interfaceText+', header, [slot="credit-bar"]'))push(video.getAttribute('poster'));
+    if(images.size===4)break;
+  }
+  return [...images];
 }
 function aiImageData(source){return new Promise((resolve,reject)=>{
   const url=aiImageURL(source);if(!url){reject(Error('Picture URL is not permitted.'));return;}let request;
@@ -976,16 +1029,20 @@ function aiEligible(post){
 }
 function aiAllowed(post,data){return matchBlock(data.title.toLowerCase()+' '+data.content+' r/'+data.subreddit,whiteRules)!==null;}
 function getPostData(post){return {title:getPostTitle(post),content:getPostText(post),subreddit:getSubreddit(post),identity:getPostIdentity(post),url:getPostLink(post)};}
-function aiText(post){
+function aiText(post,legacyKeep=false){
   const data=getPostData(post),parts=[data.title,'Subreddit: r/'+data.subreddit];
   const bodies=[...post.querySelectorAll(textAreas)].filter(node=>!node.parentElement?.closest(textAreas));
   for(const body of bodies){const clone=body.cloneNode(true);clone.querySelectorAll('script,style,template,[data-reddit-filter-ui],button,[role="button"]').forEach(n=>n.remove());parts.push(clone.textContent);}
   // Card summaries and image descriptions can identify subjects missing from the title.
-  for(const node of post.querySelectorAll('[slot="post-media-container"] img, img.preview, a.thumbnail img, [data-testid="post-container"] img, img[alt]')){
-    if(aiImageElement(node)&&node.alt?.trim())parts.push(node.alt.trim());
-  }
-  if(!bodies.length)parts.push(data.content);
-  return parts.filter(Boolean).join('\n').replace(/[\t ]+/g,' ').slice(0,10000);
+  if(legacyKeep){
+    // Existing manual Keep hashes retain the previous text extraction and length bound.
+    for(const node of post.querySelectorAll('[slot="post-media-container"] img, img.preview, a.thumbnail img, [data-testid="post-container"] img, img[alt]'))if(aiImageElement(node)&&node.alt?.trim())parts.push(node.alt.trim());
+  }else parts.push(...getPostEvidence(post));
+  if(!bodies.length)parts.push(getPostText(post,false));
+  const text=parts.filter(Boolean).join('\n').replace(/[\t ]+/g,' '),omission='\n[... middle omitted ...]\n';
+  if(legacyKeep)return text.slice(0,10000);
+  // Keep the original head and a bounded tail; full relevant content still invalidates automatic decisions.
+  return text.length<=13000?text:text.slice(0,10000)+omission+text.slice(-(3000-omission.length));
 }
 function aiValid(job){return job.generation===aiGeneration&&job.context===ruleEpoch&&job.environment===aiEnvironment()&&job.post.isConnected&&aiEligible(job.post)&&JSON.stringify(getPostData(job.post))===job.snapshot&&aiText(job.post)===job.text&&JSON.stringify(aiImages(job.post,settings.ai.analyzeImages))===JSON.stringify(job.images||[]);}
 function resetAI(){
