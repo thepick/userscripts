@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BlueSky Content Manager AI
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      0.1.9
+// @version      0.1.10
 // @description  Filter Bluesky by meaning with optional OpenRouter AI topics, preview and reveal controls, plus keyword, account, allowlist, and alt-text filters.
 // @license      MIT
 // @match        https://bsky.app/*
@@ -30,7 +30,7 @@
 /*** AI TOPIC FILTER — no page code or post instructions are executed ***/
 const AI_KEY='bcmaiOpenRouterKeyV1', AI_CACHE='bcmaiAIResultsV1', AI_USAGE='bcmaiUsageV1', AI_KEEPS='bcmaiKeepsV1', AI_PACING='bcmaiDecisionPacingV1';
 const AI_MIN_GAP=250;
-const AI_POLICY=5;
+const AI_POLICY=6;
 const AI_MODEL='~liquid/d1-ultra-latest', AI_RESERVE=.005, AI_AGE=7*86400000;
 const NEWS_FEED='at://did:plc:kkf4naxqmweop7dv4l2iqqf5/app.bsky.feed.generator/verified-news';
 const aiDefaults={enabled:false,mode:'preview',scope:'news',analyzeImages:false,topics:[],budget:.10,requestLimit:200};
@@ -140,23 +140,34 @@ function installSettings(value){
   patterns.clear();for(const term of filteredTerms.concat(manualWhitelistTerms))termToRegex(term);
 }
 function escapeRegExp(value){return value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
-function cleanText(value){return value.normalize('NFKD').replace(/\s+/g,' ').toLowerCase().trim();}
+function foldText(value){return value.normalize('NFKC').replace(/[\u00AD\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g,'').toLowerCase();}
+function phraseText(value){return value.replace(/[\s\p{Pd}_]+/gu,' ');}
+function cleanText(value){return phraseText(foldText(value)).trim();}
 function termToRegex(term){
   if(!term||typeof term!=='string')return null;
   if(!patterns.has(term)){
-    const escaped=escapeRegExp(term);
-    // Preserve the existing word suffixes and literal phrase matching.
-    patterns.set(term,/^[a-z]+$/i.test(term)&&term.length>=3?new RegExp(`\\b${escaped}(?:s|es|ed|ing|er|ers)?\\b`,'i'):new RegExp(escaped,'i'));
+    const entry=foldText(term).trim(),variants=[entry];
+    if(!entry)return null;
+    if(/\s/.test(entry))patterns.set(term,new RegExp(escapeRegExp(phraseText(entry)),'iu'));
+    else{
+      // shortcut: regular English plurals only; enter irregular forms separately.
+      if(/^[a-z]+$/.test(entry)){
+        if(/[^aeiou]y$/.test(entry))variants.push(entry.slice(0,-1)+'ies');
+        else if(/(s|x|z|ch|sh)$/.test(entry))variants.push(entry+'es');
+        else variants.push(entry+'s');
+      }
+      patterns.set(term,new RegExp('(^|[^\\p{L}\\p{N}_])('+variants.map(escapeRegExp).join('|')+')(?=$|[^\\p{L}\\p{N}_])','iu'));
+    }
   }
   return patterns.get(term);
 }
 function regexMatchAny(text,terms){
-  if(!text||!terms.length)return null;const cleaned=cleanText(text);
-  for(const term of terms){const re=termToRegex(term);if(re&&(re.test(text)||re.test(cleaned)))return term;}return null;
+  if(!text||!terms.length)return null;const folded=foldText(text),phrases=phraseText(folded);
+  for(const term of terms){const re=termToRegex(term);if(re&&re.test(/\s/.test(foldText(term).trim())?phrases:folded))return term;}return null;
 }
 async function digest(value){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));return Array.from(new Uint8Array(bytes),byte=>byte.toString(16).padStart(2,'0')).join('');}
 function rebuildContext(){
-  const value=JSON.stringify([1,settings,currentUserDid,autoWhitelistEnabled?followReady:true,autoWhitelistEnabled?[...whitelistedUsers].sort():[]]);
+  const value=JSON.stringify([2,settings,currentUserDid,autoWhitelistEnabled?followReady:true,autoWhitelistEnabled?[...whitelistedUsers].sort():[]]);
   if(value===contextInput)return contextReady;contextInput=value;const epoch=++contextEpoch;
   contextReady=digest(value).then(context=>{if(epoch!==contextEpoch)return;decisionContext=context;processedPosts=new WeakMap();rescanPosts();});return contextReady;
 }
@@ -223,12 +234,27 @@ function shouldRequireAltText(img){
   return !(width>0&&height>0&&(width<=48||height<=48))&&img.getAttribute('aria-hidden')!=='true'&&img.getAttribute('role')!=='presentation';
 }
 function isControl(element){return !!element.closest('button,[role="button"],time,[data-bcmai-ui]');}
+function getPostEvidence(post){
+  const parts=[];
+  for(const node of post.querySelectorAll('img[alt],img[aria-label],a[title],a[aria-label],video[title],[role="link"][aria-label]')){
+    if(node.tagName==='IMG'){if(!aiImageElement(node))continue;parts.push(node.alt||node.getAttribute('aria-label')||'');continue;}
+    if(isControl(node)||node.closest('[data-testid="avatar"],[data-bcmai-ui]'))continue;
+    const href=node.getAttribute('href');
+    if(href){try{const url=new URL(href,'https://bsky.app');if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.origin==='https://bsky.app')continue;}catch(_){continue;}}
+    parts.push(node.getAttribute('title')||'',node.getAttribute('aria-label')||'');
+  }
+  for(const link of post.querySelectorAll('a[href]')){
+    if(isControl(link)||link.closest('[data-testid="avatar"],[data-bcmai-ui]'))continue;
+    try{const url=new URL(link.getAttribute('href'),'https://bsky.app');if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.origin==='https://bsky.app')continue;parts.push(decodeURIComponent(url.pathname).replace(/[-_/]+/g,' '));}catch(_){}
+  }
+  return parts.filter(text=>text.trim());
+}
 function getPostData(post){
   const identity=getPostIdentity(post),author=identity?.author||extractAuthorHandle(post),authorIds=getAuthorIdentities(post,identity);
   const texts=[...post.querySelectorAll('[data-testid="postText"]')].map(element=>element.textContent||'');
-  const images=[...post.querySelectorAll('img')].map(img=>({text:img.alt||img.getAttribute('aria-label')||'',alt:img.alt||'',src:img.getAttribute('src')||'',required:shouldRequireAltText(img)}));
+  const images=[...post.querySelectorAll('img')].map(img=>({text:aiImageElement(img)?(img.alt||img.getAttribute('aria-label')||''):'',alt:img.alt||'',src:img.getAttribute('src')||'',required:shouldRequireAltText(img)}));
   const names=[...post.querySelectorAll('a[href*="/profile/"]')].filter(element=>!parsePostURL(element.getAttribute('href'))).map(element=>element.textContent||'').join(' ');
-  const labels=[...post.querySelectorAll('[aria-label],[title]')].filter(element=>!isControl(element)&&!(element.matches('a')&&parsePostURL(element.getAttribute('href')))).map(element=>`${element.getAttribute('aria-label')||''} ${element.getAttribute('title')||''}`).join(' ');
+  const labels=getPostEvidence(post).join(' ');
   const parts=[],walker=document.createTreeWalker(post,NodeFilter.SHOW_TEXT);let node;
   while((node=walker.nextNode())){const parent=node.parentElement;if(!parent||isControl(parent))continue;const link=parent.closest('a');if(link&&parsePostURL(link.getAttribute('href'))&&!link.querySelector('[data-testid="postText"]'))continue;parts.push(node.nodeValue);}
   return {identity,author,authorIds,text:texts.join(' '),images,names,labels,general:parts.join(' ').replace(/\s+/g,' ').trim()};
@@ -296,7 +322,7 @@ function collectPosts(node){
 function rescanPosts(){if(document.body)collectPosts(document.body);}
 function observePosts(){
   const observer=new MutationObserver(mutations=>{for(const mutation of mutations){const target=mutation.target.nodeType===1?mutation.target:mutation.target.parentElement;if(!target||target.closest('[data-bcmai-ui]'))continue;const post=getPostContainer(target);if(post)enqueuePost(post);for(const node of mutation.addedNodes)collectPosts(node);}});
-  observer.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['alt','aria-label','aria-hidden','title','src','href','role','data-testid','width','height']});
+  observer.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['alt','aria-label','aria-hidden','title','src','srcset','poster','href','role','data-testid','width','height']});
   document.addEventListener('load',event=>{if(event.target?.tagName==='IMG'){const post=getPostContainer(event.target);if(post)enqueuePost(post);}},true);return observer;
 }
 
@@ -413,25 +439,33 @@ function aiImageURL(value){
     return url.href;
   }catch(_){return '';}
 }
-function aiImages(post,enabled){
+function aiImageElement(img,legacyKeep=false){
+  const source=img.getAttribute('src')||'';
+  if(img.closest('[data-bcmai-ui],[data-testid="avatar"]')||img.classList.contains('avatar')||/\/(?:avatars?|banners?|icons?)(?:[_/.-]|$)/i.test(source)||img.getAttribute('aria-hidden')==='true'||img.getAttribute('role')==='presentation')return false;
+  const width=img.naturalWidth||0,height=img.naturalHeight||0;
+  if(width>0&&height>0&&(legacyKeep?(width<80||height<80):(width<60||height<40)))return false;
+  const link=img.closest('a[href]');
+  if(link){try{const url=new URL(link.getAttribute('href'),'https://bsky.app');if(/\/(?:profile|avatars?)(?:\/|$)/i.test(url.pathname)&&!(url.origin==='https://bsky.app'&&!url.username&&!url.password&&/^\/profile\/[^/]+\/post\/[^/]+\/?$/.test(url.pathname)))return false;}catch(_){return false;}}
+  return true;
+}
+function aiSrcsetURL(value){
+  let best='',largest=0;
+  for(const candidate of (value||'').split(',')){
+    const match=candidate.trim().match(/^(\S+)(?:\s+(\d+(?:\.\d+)?)(w|x))?$/);if(!match)continue;
+    const size=Number(match[2]||1),url=aiImageURL(match[1]);
+    if(url&&size>largest&&(match[3]!=='w'||Number.isInteger(size))){best=url;largest=size;}
+  }
+  return best;
+}
+function aiImages(post,enabled,legacyKeep=false){
   if(!enabled)return [];
-  const images=new Set();
+  const images=new Set(),push=value=>{if(images.size<4){const url=aiImageURL(value);if(url)images.add(url);}};
   for(const img of post.querySelectorAll('img')){
-    if(img.closest('[data-bcmai-ui]')||img.closest('[data-testid="avatar"]')||img.classList.contains('avatar')||img.getAttribute('aria-hidden')==='true'||img.getAttribute('role')==='presentation')continue;
-    // Unloaded pictures may temporarily render as a tiny alt-text placeholder.
-    const width=img.naturalWidth||0,height=img.naturalHeight||0;
-    if(width>0&&height>0&&(width<80||height<80))continue;
-    const link=img.closest('a[href]');
-    if(link){
-      try{
-        const url=new URL(link.getAttribute('href'),'https://bsky.app');
-        if(/\/(?:profile|avatars?)(?:\/|$)/i.test(url.pathname)&&!(url.origin==='https://bsky.app'&&!url.username&&!url.password&&/^\/profile\/[^/]+\/post\/[^/]+\/?$/.test(url.pathname)))continue;
-      }catch(_){continue;}
-    }
-    const source=aiImageURL(img.currentSrc)||aiImageURL(img.getAttribute('src'));
-    if(source)images.add(source);
+    if(!aiImageElement(img,legacyKeep))continue;
+    push(aiImageURL(img.currentSrc)||aiImageURL(img.getAttribute('src'))||(!legacyKeep&&aiSrcsetURL(img.getAttribute('srcset'))));
     if(images.size===4)break;
   }
+  if(!legacyKeep)for(const video of post.querySelectorAll('video[poster]'))if(!video.closest('[data-bcmai-ui],[data-testid="avatar"]'))push(video.getAttribute('poster'));
   return [...images];
 }
 function aiImageData(source){return new Promise((resolve,reject)=>{
@@ -530,12 +564,15 @@ function aiScope(){
   try{return sessionStorage.getItem('lastSelectedHomeFeed')==='feedgen|'+NEWS_FEED;}catch(_){return false;}
 }
 function aiAllowed(post,data){return isWhitelisted(post,data)||!!regexMatchAny([data.general,data.text,data.names,data.labels,...data.images.map(i=>i.text)].join(' '),manualWhitelistTerms.filter(t=>!t.startsWith('@')));}
-function aiText(post){
+function aiText(post,legacyKeep=false){
   const clone=post.cloneNode(true);clone.querySelectorAll('[data-bcmai-ui],button,[role="button"],time,a[href*="/profile/"]:not([href*="/post/"])').forEach(n=>n.remove());
   clone.querySelectorAll('a[href*="/post/"]').forEach(n=>{if(!n.querySelector('[data-testid="postText"]')&&!n.closest('[data-testid="postText"]'))n.remove();});
   const text=clone.textContent.replace(/\s+/g,' ').trim();
   const alts=[...post.querySelectorAll('img')].filter(shouldRequireAltText).map(i=>i.alt.trim()).filter(Boolean);
-  return [text,...alts].filter(Boolean).join('\n').slice(0,10000);
+  const joined=[text,...alts,...(legacyKeep?[]:getPostEvidence(post))].filter(Boolean).join('\n');
+  if(legacyKeep)return joined.slice(0,10000);
+  const omission='\n[... middle omitted ...]\n';
+  return joined.length<=13000?joined:joined.slice(0,10000)+omission+joined.slice(-(3000-omission.length));
 }
 function aiPayload(text,topics,images=[]){return aiBatchPayload([{text,topics,images}]);}
 function aiBatchPayload(jobs){
@@ -589,12 +626,12 @@ async function cacheAI(key,result){
   await aiLock(async()=>{let entries;try{entries=aiJSON(AI_CACHE,[]);if(!Array.isArray(entries))entries=[];}catch(_){entries=[];}const merged=new Map(entries.filter(e=>Array.isArray(e)&&e.length===2));merged.delete(key);merged.set(key,value);await GM_setValue(AI_CACHE,JSON.stringify([...merged].slice(-1000)));});
 }
 function clearAIPanel(post){const panel=aiPanels.get(post);panel?.remove();aiPanels.delete(post);if(post.classList.contains('bcmai-ai-hidden'))post.classList.remove('bcmai-ai-hidden');}
-function resetAI(){aiGeneration++;aiJobs.clear();aiTemporary.clear();aiViewportObserver?.disconnect();aiViewportObserver=null;aiWatched.clear();for(const post of aiPanels.keys())clearAIPanel(post);for(const state of aiLoadFeeds.values()){clearTimeout(state.timer);state.marker?.classList.remove('bcmai-load-paused');}aiLoadFeeds.clear();if(aiLoadFrame!==null){cancelAnimationFrame(aiLoadFrame);aiLoadFrame=null;}if(!settings.ai?.enabled)aiMessage='AI is off.';else if(Date.now()>=aiCooldown)aiMessage='AI ready; checking visible posts in the selected scope.';updateAIStatus();}
-function isAIVisible(post){const panel=aiPanels.get(post),node=panel?.isConnected?panel:post,r=node.getBoundingClientRect();return !!node.getClientRects().length&&r.bottom>=0&&r.top<innerHeight&&r.right>=0&&r.left<innerWidth&&!post.closest('[aria-hidden="true"]');}
+function resetAI(){aiGeneration++;aiJobs.clear();aiTemporary.clear();aiViewportObserver?.disconnect();aiViewportObserver=null;aiWatched.clear();for(const post of aiPanels.keys())clearAIPanel(post);for(const state of aiLoadFeeds.values()){clearTimeout(state.timer);state.marker?.classList.remove('bcmai-load-paused');}aiLoadFeeds.clear();if(aiLoadFrame!==null){cancelAnimationFrame(aiLoadFrame);aiLoadFrame=null;}if(!settings.ai?.enabled)aiMessage='AI is off.';else if(Date.now()>=aiCooldown)aiMessage='AI ready; checking visible and nearby posts in the selected scope.';updateAIStatus();}
+function isAIVisible(post,lookahead=0){const panel=aiPanels.get(post),node=panel?.isConnected?panel:post,r=node.getBoundingClientRect();return !!node.getClientRects().length&&r.bottom>=-innerHeight*Math.min(lookahead,1)&&r.top<innerHeight*(1+lookahead)&&r.right>=0&&r.left<innerWidth&&!post.closest('[aria-hidden="true"]');}
 function watchAIPost(post){
   if(typeof IntersectionObserver!=='function'||aiWatched.has(post))return;
   // Masonry layout can expose a card without a scroll or content mutation.
-  if(!aiViewportObserver)aiViewportObserver=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting&&entry.target.isConnected&&aiWatched.has(entry.target))enqueuePost(entry.target);});
+  if(!aiViewportObserver)aiViewportObserver=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting&&entry.target.isConnected&&aiWatched.has(entry.target))enqueuePost(entry.target);},{rootMargin:`${innerHeight}px 0px ${innerHeight*2}px 0px`});
   aiWatched.add(post);aiViewportObserver.observe(post);
 }
 function refreshAILoadGuards(){
@@ -615,8 +652,9 @@ function refreshAILoadGuards(){
   }
 }
 function scheduleAILoadGuard(){if(aiLoadFrame!==null)return;aiLoadFrame=requestAnimationFrame(()=>{aiLoadFrame=null;requestAnimationFrame(refreshAILoadGuards);});}
-function aiValid(job){return currentUserDid===getActiveAccount(readSiteState())&&job.generation===aiGeneration&&job.context===decisionContext&&job.environment===aiEnvironment()&&job.post.isConnected&&aiScope()&&JSON.stringify(getPostData(job.post))===job.snapshot&&JSON.stringify(aiImages(job.post,settings.ai.analyzeImages))===JSON.stringify(job.images||[]);}
+function aiValid(job){return currentUserDid===getActiveAccount(readSiteState())&&job.generation===aiGeneration&&job.context===decisionContext&&job.environment===aiEnvironment()&&job.post.isConnected&&aiScope()&&JSON.stringify(getPostData(job.post))===job.snapshot&&aiText(job.post)===job.text&&JSON.stringify(aiImages(job.post,settings.ai.analyzeImages))===JSON.stringify(job.images||[]);}
 async function keptAI(key){const keeps=aiJSON(AI_KEEPS,[]);if(!Array.isArray(keeps))throw Error('Saved keep overrides are invalid. Clear AI memory to recover.');return keeps.includes(key);}
+const aiSessionHides=new Map();
 function renderAI(job,result){
   const checkedKey=job.url||job.key;if(aiChecked.get(checkedKey)!==result.decision){aiChecked.set(checkedKey,result.decision);scheduleMenu();}
   const existing=aiPanels.get(job.post);if(existing&&(existing.isConnected||job.post.classList.contains('bcmai-ai-hidden'))&&existing.dataset.bcmaiKey===job.key&&existing.dataset.bcmaiMode===settings.ai.mode)return;
@@ -625,27 +663,28 @@ function renderAI(job,result){
   for(const type of ['click','keydown','keyup'])panel.addEventListener(type,event=>event.stopPropagation());
   panel.dataset.bcmaiKey=job.key;panel.dataset.bcmaiMode=settings.ai.mode;
   const evidence=result.evidence+' Rules checked: '+job.topics.join(' | ');
-  const hiding=settings.ai.mode==='hide',description=element('span','',`${hiding?'Hidden':'Would hide'}: ${topic}. ${result.evidence} `);
+  const hiding=settings.ai.mode==='hide'||aiSessionHides.has(job.keepKey),description=element('span','',`${hiding?'Hidden':'Would hide'}: ${topic}. ${result.evidence} `);
   const recordHide=()=>recordBlockedPost(job.post,getPostData(job.post),{reason:'AI topic',keyword:topic,evidence});
   const reveal=element('button','','Hide this post'),keep=element('button','','Keep this post');reveal.type=keep.type='button';
   let hidden=hiding;job.post.classList.toggle('bcmai-ai-hidden',hidden);if(hidden)recordHide();
-  reveal.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();hidden=true;job.post.classList.add('bcmai-ai-hidden');recordHide();panel.remove();const row=aiHistory.get(job.key);if(row)row.mode='hide';scheduleAILoadGuard();updateAIStatus();});
-  keep.addEventListener('click',async e=>{e.preventDefault();e.stopPropagation();keep.disabled=true;try{await aiLock(async()=>{const values=aiJSON(AI_KEEPS,[]);if(!Array.isArray(values))throw Error();await GM_setValue(AI_KEEPS,JSON.stringify([...new Set([...values,job.keepKey])].slice(-1000)));});clearAIPanel(job.post);aiMessage='Post kept. This override applies to its current content and account.';}catch(_){keep.disabled=false;aiMessage='Could not save this keep override. Try again.';}updateAIStatus();});
+  reveal.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if(!aiValid(job)){clearAIPanel(job.post);enqueuePost(job.post);return;}aiSessionHides.set(job.keepKey,true);while(aiSessionHides.size>1000)aiSessionHides.delete(aiSessionHides.keys().next().value);hidden=true;job.post.classList.add('bcmai-ai-hidden');recordHide();panel.remove();const row=aiHistory.get(job.key);if(row)row.mode='hide';scheduleAILoadGuard();updateAIStatus();});
+  keep.addEventListener('click',async e=>{e.preventDefault();e.stopPropagation();keep.disabled=true;try{await aiLock(async()=>{const values=aiJSON(AI_KEEPS,[]);if(!Array.isArray(values))throw Error();await GM_setValue(AI_KEEPS,JSON.stringify([...new Set([...values,job.keepKey])].slice(-1000)));});if(aiValid(job))clearAIPanel(job.post);aiMessage='Post kept. This override applies to its current content and account.';}catch(_){keep.disabled=false;aiMessage='Could not save this keep override. Try again.';}updateAIStatus();});
   panel.append(description,reveal,keep);if(!hiding)job.post.prepend(panel);aiPanels.set(job.post,panel);if(hiding)scheduleAILoadGuard();
-  aiHistory.delete(job.key);aiHistory.set(job.key,{url:job.url,topic,evidence,mode:settings.ai.mode});while(aiHistory.size>100)aiHistory.delete(aiHistory.keys().next().value);aiMatches.add(job.url||job.key);scheduleMenu();updateAIStatus();
+  aiHistory.delete(job.key);aiHistory.set(job.key,{url:job.url,topic,evidence,mode:hiding?'hide':'preview'});while(aiHistory.size>100)aiHistory.delete(aiHistory.keys().next().value);aiMatches.add(job.url||job.key);scheduleMenu();updateAIStatus();
 }
 async function scheduleAI(post,data,context){
   if(!settings.ai.enabled||!aiKey||!settings.ai.topics.length||!aiScope()||aiAllowed(post,data)||!data.identity){clearAIPanel(post);aiJobs.delete(post);return;}
-  const text=aiText(post),images=aiImages(post,settings.ai.analyzeImages);if(!images.length&&text.replace(/https?:\/\/\S+/g,'').trim().length<20){clearAIPanel(post);return;}
+  const text=aiText(post),keepText=aiText(post,true),images=aiImages(post,settings.ai.analyzeImages),legacyImages=aiImages(post,settings.ai.analyzeImages,true);
+  if(!images.length&&text.replace(/https?:\/\/\S+/g,'').trim().length<20){clearAIPanel(post);return;}
   const generation=aiGeneration,environment=aiEnvironment(),snapshot=JSON.stringify(data),topics=[...settings.ai.topics],account=currentUserDid;
-  const [key,keepKey]=await Promise.all([digest(JSON.stringify([AI_POLICY,AI_MODEL,AI_VISION_MODEL,topics,account,text,images])),digest(JSON.stringify([account,data.identity.url,text,...(images.length?[images]:[])]))]);
+  const [key,keepKey,legacyKeepKey]=await Promise.all([digest(JSON.stringify([AI_POLICY,AI_MODEL,AI_VISION_MODEL,topics,account,text,images,snapshot])),digest(JSON.stringify([account,data.identity.url,text,images,snapshot])),digest(JSON.stringify([account,data.identity.url,keepText,...(legacyImages.length?[legacyImages]:[])]))]);
   const job={post,text,topics,images,key,keepKey,context,generation,environment,snapshot,url:data.identity.url};if(!aiValid(job))return;
   watchAIPost(post);
   const previous=aiPanels.get(post);if(previous&&previous.dataset.bcmaiKey!==key)clearAIPanel(post);
-  try{const kept=await keptAI(keepKey);if(!aiValid(job))return;if(kept){clearAIPanel(post);return;}}catch(error){aiMessage=error.message;updateAIStatus();return;}
+  try{const kept=await keptAI(keepKey)||(keepKey!==legacyKeepKey&&await keptAI(legacyKeepKey));if(!aiValid(job))return;if(kept){clearAIPanel(post);return;}}catch(error){aiMessage=error.message;updateAIStatus();return;}
   const cached=aiResults.get(key);if(cached){try{if(Date.now()-cached.at<0||Date.now()-cached.at>=AI_AGE)throw Error();renderAI(job,parseAIResult(cached));return;}catch(_){aiResults.delete(key);}}
   const until=aiTemporary.get(key);if(until&&until>Date.now())return;
-  if(!isAIVisible(post))return;aiJobs.set(post,job);while(aiJobs.size>64)aiJobs.delete(aiJobs.keys().next().value);void drainAI();
+  if(!isAIVisible(post,2))return;aiJobs.set(post,job);while(aiJobs.size>64)aiJobs.delete(aiJobs.keys().next().value);void drainAI();
 }
 async function requestAI(job,key,ready=()=>true,prepared){
   const payload=prepared||await aiRequestPayload(job,ready);
@@ -658,10 +697,12 @@ async function drainAI(){
   try{while(aiJobs.size){
     if(document.hidden||configDialog?.open||Date.now()<aiCooldown)break;
     const batch=[];
-    for(const [post,job]of aiJobs){
+    const queued=[...aiJobs].map(([post,job])=>({post,job,visible:isAIVisible(post)}));
+    queued.sort((a,b)=>Number(b.visible)-Number(a.visible));
+    for(const {post,job}of queued){
       if(batch.length===3)break;
       if(batch.some(other=>other.key===job.key))continue;
-      aiJobs.delete(post);if(!aiValid(job)||!isAIVisible(post)||(aiTemporary.get(job.key)||0)>Date.now())continue;
+      aiJobs.delete(post);if(!aiValid(job)||!isAIVisible(post,2)||(aiTemporary.get(job.key)||0)>Date.now())continue;
       const cached=aiResults.get(job.key);if(cached){try{if(Date.now()-cached.at<0||Date.now()-cached.at>=AI_AGE)throw Error();renderAI(job,parseAIResult(cached));continue;}catch(_){aiResults.delete(job.key);}}
       // shortcut: image posts stay separate after mixed-image batches failed the MMA exception; revisit after accuracy testing.
       if(batch.length&&(job.images.length||batch[0].images.length)){aiJobs.set(post,job);break;}
@@ -674,12 +715,12 @@ async function drainAI(){
     try{
       const slots=Math.max(1,Math.floor((limits.budget-readAIUsage().cost+1e-10)/AI_RESERVE));while(batch.length>slots){const job=batch.pop();aiJobs.set(job.post,job);}
       // Gemini owns picture scanning and its reservation; Liquid receives only the resulting text.
-      const payload=await aiRequestPayload(batch.length===1?batch[0]:batch,()=>batch.every(job=>aiValid(job)&&isAIVisible(job.post))&&!document.hidden&&!configDialog?.open,limits,key);
-      if(batch.some(job=>!aiValid(job)||!isAIVisible(job.post))||document.hidden||configDialog?.open){requeue();break;}
+      const payload=await aiRequestPayload(batch.length===1?batch[0]:batch,()=>batch.every(job=>aiValid(job)&&isAIVisible(job.post,2))&&!document.hidden&&!configDialog?.open,limits,key);
+      if(batch.some(job=>!aiValid(job)||!isAIVisible(job.post,2))||document.hidden||configDialog?.open){requeue();break;}
       day=await reserveAI(limits,batch.length);
-      if(batch.some(job=>!aiValid(job)||!isAIVisible(job.post))||document.hidden||configDialog?.open){await settleAI(day,0,true,batch.length);requeue();break;}
-      aiMessage='Checking visible posts…';updateAIStatus();
-      const response=await requestAI(batch.length===1?batch[0]:batch,key,()=>batch.every(job=>aiValid(job)&&isAIVisible(job.post))&&!document.hidden&&!configDialog?.open,payload);await settleAI(day,response.usage?.cost,false,batch.length);await settleAIPacing();
+      if(batch.some(job=>!aiValid(job)||!isAIVisible(job.post,2))||document.hidden||configDialog?.open){await settleAI(day,0,true,batch.length);requeue();break;}
+      aiMessage='Checking visible and nearby posts…';updateAIStatus();
+      const response=await requestAI(batch.length===1?batch[0]:batch,key,()=>batch.every(job=>aiValid(job)&&isAIVisible(job.post,2))&&!document.hidden&&!configDialog?.open,payload);await settleAI(day,response.usage?.cost,false,batch.length);await settleAIPacing();
       let results;
       // Unverifiable model answers affect only their own posts, never settings or the remaining queue.
       results=parseAIBatch(response,batch);
@@ -696,9 +737,9 @@ async function drainAI(){
     }finally{updateAIStatus();}
   }}finally{aiBusy=false;updateAIStatus();}
 }
-function refreshAIEnvironment(){const current=aiEnvironment();if(current!==lastAIEnvironment){lastAIEnvironment=current;resetAI();processedPosts=new WeakMap();rescanPosts();}for(const post of aiPanels.keys())if(!post.isConnected)clearAIPanel(post);for(const post of aiWatched)if(!post.isConnected){aiViewportObserver?.unobserve(post);aiWatched.delete(post);}refreshAILoadGuards();let retry=false;for(const [key,until]of aiTemporary)if(until<=Date.now()){aiTemporary.delete(key);retry=true;}if(retry)for(const post of aiWatched)if(isAIVisible(post))enqueuePost(post);while(aiTemporary.size>1000)aiTemporary.delete(aiTemporary.keys().next().value);const waiting=!!settings.ai?.enabled&&Date.now()<aiCooldown;if(waiting!==aiMenuWaiting){aiMenuWaiting=waiting;scheduleMenu();}void drainAI();}
+function refreshAIEnvironment(){const current=aiEnvironment();if(current!==lastAIEnvironment){lastAIEnvironment=current;resetAI();processedPosts=new WeakMap();rescanPosts();}for(const post of aiPanels.keys())if(!post.isConnected)clearAIPanel(post);for(const post of aiWatched)if(!post.isConnected){aiViewportObserver?.unobserve(post);aiWatched.delete(post);}refreshAILoadGuards();let retry=false;for(const [key,until]of aiTemporary)if(until<=Date.now()){aiTemporary.delete(key);retry=true;}if(retry)for(const post of aiWatched)if(isAIVisible(post,2))enqueuePost(post);while(aiTemporary.size>1000)aiTemporary.delete(aiTemporary.keys().next().value);const waiting=!!settings.ai?.enabled&&Date.now()<aiCooldown;if(waiting!==aiMenuWaiting){aiMenuWaiting=waiting;scheduleMenu();}void drainAI();}
 function mountAISettings(dialog){
-  const section=element('section','bcmai-section');section.innerHTML=`<h3>AI topics to hide</h3><p class="bcmai-help" id="bcmai-ai-help">Enter topics or describe what to hide, one per line. AI checks meaning, including related subjects without these exact words. Only the main topic counts; incidental mentions stay visible.</p><label class="bcmai-ai-check"><input id="bcmai-ai-enabled" type="checkbox"> Enable AI topic filtering</label><label class="bcmai-ai-check"><input id="bcmai-ai-images" type="checkbox"> Analyze attached pictures and article thumbnails</label><p class="bcmai-help">Optional: Gemini 2.5 Flash-Lite scans up to four public Bluesky pictures. Liquid receives text descriptions and makes the final filtering decision. Images add to request cost. Avatars, private URLs, and video are excluded.</p><label for="bcmai-ai-topics">Topics</label><textarea id="bcmai-ai-topics" aria-describedby="bcmai-ai-help" placeholder="Sports&#10;US elections and party politics&#10;Donald Trump" spellcheck="false"></textarea><div class="bcmai-editors"><div><label for="bcmai-ai-mode">Action</label><select id="bcmai-ai-mode"><option value="preview">Preview — label matches, keep posts visible</option><option value="hide">Hide — remove matches completely</option></select></div><div><label for="bcmai-ai-scope">Where to use AI</label><select id="bcmai-ai-scope"><option value="news">Your News feed only (aendra.com)</option><option value="all">All home, profile, and custom feeds</option></select></div><div><label for="bcmai-ai-budget">Daily budget (USD, UTC)</label><input id="bcmai-ai-budget" type="number" min="0.01" max="10" step="0.01"></div><div><label for="bcmai-ai-limit">Daily request limit (UTC)</label><input id="bcmai-ai-limit" type="number" min="1" max="5000" step="1"></div></div><p class="bcmai-help">Liquid d1-ultra Latest makes topic decisions; Gemini 2.5 Flash-Lite scans pictures through OpenRouter. New requests follow the latest Ultra model. Match scores are model estimates, not guaranteed accuracy; uncertain matches remain visible. Your existing daily limits still apply. When enabled, visible post text, article previews, image descriptions, and your topics are sent to OpenRouter and its provider. With image analysis enabled, this script downloads the attached pictures and article thumbnails from public Bluesky URLs and sends the image data to Gemini. Liquid receives only text, including Gemini's observations. Your API key is sent only to OpenRouter. No full articles or Bluesky login tokens are sent. Allowlist overrides and followed-account overrides bypass AI; literal blocks and the optional missing-alt-text rule run first.</p><p class="bcmai-help">Each Gemini scan reserves $0.005. Each Liquid request reserves $0.005 per included post, then reconciled with reported cost. Failed attempts or missing cost reports retain that allowance for the day. Both stages count toward the daily request limit. Visual descriptions are cached for this page session; final decisions keep their existing local memory. Local limits are best effort; use an OpenRouter key spending limit for a firm account cap. Errors, insufficient text, and uncertain results keep posts visible. The review history shows the post, match score, model, and rules checked; this model does not generate evidence quotes. Text-only requests group up to three queued posts; picture posts use Gemini first, then Liquid, with shared pacing across tabs. An incomplete or failed picture scan keeps that post visible. Rate limits pause checks and retry automatically. Scanning pauses while settings are open.</p><label for="bcmai-ai-key">Your OpenRouter API key</label><input id="bcmai-ai-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste a new key to replace the saved key"><p class="bcmai-help" id="bcmai-ai-key-status"></p><div class="bcmai-row"><button id="bcmai-ai-save-key" type="button">Save API key</button><button id="bcmai-ai-remove-key" type="button">Remove API key</button><button id="bcmai-ai-retry" type="button">Retry AI checks</button><button id="bcmai-ai-clear" type="button">Clear AI memory and keep overrides</button></div><p class="bcmai-status" id="bcmai-ai-status" role="status" aria-live="polite"></p><p class="bcmai-help">API keys stay in this script's userscript-manager storage and are excluded from exports. Backups from the original Content Manager can import your existing lists. Disable the original script while testing this one so its filters do not hide posts separately.</p><details><summary>Recent AI matches this session</summary><ul class="bcmai-history" id="bcmai-ai-history"></ul></details>`;
+  const section=element('section','bcmai-section');section.innerHTML=`<h3>AI topics to hide</h3><p class="bcmai-help" id="bcmai-ai-help">Enter topics or describe what to hide, one per line. AI checks meaning, including related subjects without these exact words. Only the main topic counts; incidental mentions stay visible. Loaded cards are checked up to two screens ahead, with visible cards first; this may check posts you never view.</p><label class="bcmai-ai-check"><input id="bcmai-ai-enabled" type="checkbox"> Enable AI topic filtering</label><label class="bcmai-ai-check"><input id="bcmai-ai-images" type="checkbox"> Analyze attached pictures and article thumbnails</label><p class="bcmai-help">Optional: Gemini 2.5 Flash-Lite scans up to four public Bluesky pictures. Liquid receives text descriptions and makes the final filtering decision. Images add to request cost. Avatars, private URLs, and video are excluded.</p><label for="bcmai-ai-topics">Topics</label><textarea id="bcmai-ai-topics" aria-describedby="bcmai-ai-help" placeholder="Sports&#10;US elections and party politics&#10;Donald Trump" spellcheck="false"></textarea><div class="bcmai-editors"><div><label for="bcmai-ai-mode">Action</label><select id="bcmai-ai-mode"><option value="preview">Preview — label matches, keep posts visible</option><option value="hide">Hide — remove matches completely</option></select></div><div><label for="bcmai-ai-scope">Where to use AI</label><select id="bcmai-ai-scope"><option value="news">Your News feed only (aendra.com)</option><option value="all">All home, profile, and custom feeds</option></select></div><div><label for="bcmai-ai-budget">Daily budget (USD, UTC)</label><input id="bcmai-ai-budget" type="number" min="0.01" max="10" step="0.01"></div><div><label for="bcmai-ai-limit">Daily request limit (UTC)</label><input id="bcmai-ai-limit" type="number" min="1" max="5000" step="1"></div></div><p class="bcmai-help">Liquid d1-ultra Latest makes topic decisions; Gemini 2.5 Flash-Lite scans pictures through OpenRouter. New requests follow the latest Ultra model. Match scores are model estimates, not guaranteed accuracy; uncertain matches remain visible. Your existing daily limits still apply. When enabled, nearby feed post text, article previews, image descriptions, and your topics are sent to OpenRouter and its provider. With image analysis enabled, this script downloads the attached pictures and article thumbnails from public Bluesky URLs and sends the image data to Gemini. Liquid receives only text, including Gemini's observations. Your API key is sent only to OpenRouter. No full articles or Bluesky login tokens are sent. Allowlist overrides and followed-account overrides bypass AI; literal blocks and the optional missing-alt-text rule run first.</p><p class="bcmai-help">Each Gemini scan reserves $0.005. Each Liquid request reserves $0.005 per included post, then reconciled with reported cost. Failed attempts or missing cost reports retain that allowance for the day. Both stages count toward the daily request limit. Visual descriptions are cached for this page session; final decisions keep their existing local memory. Local limits are best effort; use an OpenRouter key spending limit for a firm account cap. Errors, insufficient text, and uncertain results keep posts visible. The review history shows the post, match score, model, and rules checked; this model does not generate evidence quotes. Text-only requests group up to three queued posts; picture posts use Gemini first, then Liquid, with shared pacing across tabs. An incomplete or failed picture scan keeps that post visible. Rate limits pause checks and retry automatically. Scanning pauses while settings are open.</p><label for="bcmai-ai-key">Your OpenRouter API key</label><input id="bcmai-ai-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste a new key to replace the saved key"><p class="bcmai-help" id="bcmai-ai-key-status"></p><div class="bcmai-row"><button id="bcmai-ai-save-key" type="button">Save API key</button><button id="bcmai-ai-remove-key" type="button">Remove API key</button><button id="bcmai-ai-retry" type="button">Retry AI checks</button><button id="bcmai-ai-clear" type="button">Clear AI memory and keep overrides</button></div><p class="bcmai-status" id="bcmai-ai-status" role="status" aria-live="polite"></p><p class="bcmai-help">API keys stay in this script's userscript-manager storage and are excluded from exports. Backups from the original Content Manager can import your existing lists. Disable the original script while testing this one so its filters do not hide posts separately.</p><details><summary>Recent AI matches this session</summary><ul class="bcmai-history" id="bcmai-ai-history"></ul></details>`;
   dialog.querySelector('#bcmai-errors').after(section);const find=id=>section.querySelector('#bcmai-ai-'+id),value=settings.ai;
   find('enabled').checked=value.enabled;find('images').checked=value.analyzeImages;find('topics').value=value.topics.join('\n');find('mode').value=value.mode;find('scope').value=value.scope;find('budget').value=value.budget;find('limit').value=value.requestLimit;
   updateAIStatus=()=>{if(!section.isConnected)return;find('key-status').textContent=aiKey?'An API key is saved. Leave this field blank to keep it.':'No API key saved. AI cannot send requests.';let usage='';try{const u=readAIUsage();usage=` Today: ${u.requests} requests, $${u.cost.toFixed(5)} charged or reserved.`;}catch(error){usage=error.message;}find('status').textContent=aiMessage+' This session: '+aiChecked.size+' posts classified; '+aiJobs.size+' queued. Scanning pauses while settings are open.'+usage;const list=find('history');list.replaceChildren();for(const row of [...aiHistory.values()].reverse()){const li=element('li'),a=element('a','',row.topic);a.href=row.url;a.target='_blank';a.rel='noopener noreferrer';li.append(a,element('p','bcmai-help',`${row.mode==='preview'?'Preview match':'Hide match'}: ${row.evidence}`));list.append(li);}if(!list.children.length)list.append(element('li','bcmai-help','No AI matches yet.'));};
@@ -720,6 +761,7 @@ async function main(){
     if(typeof GM_addValueChangeListener==='function'){GM_addValueChangeListener(AI_KEY,(_k,_o,v,remote)=>{if(remote){aiKey=typeof v==='string'?v:'';resetAI();processedPosts=new WeakMap();rescanPosts();}});for(const key of [AI_CACHE,AI_KEEPS])GM_addValueChangeListener(key,(_k,_o,_v,remote)=>{if(remote){aiResults.clear();loadAI();resetAI();processedPosts=new WeakMap();rescanPosts();}});}
     for(const event of ['load','error'])document.addEventListener(event,e=>{if(e.target?.tagName==='IMG')enqueuePost(getPostContainer(e.target));},true);
     window.addEventListener('scroll',()=>{clearTimeout(aiScrollTimer);aiScrollTimer=setTimeout(rescanPosts,200);},true);
+    window.addEventListener('resize',()=>{aiViewportObserver?.disconnect();aiViewportObserver=null;aiWatched.clear();rescanPosts();});
     setInterval(()=>{void refreshEnvironment();if(autoWhitelistEnabled&&currentUserDid&&followState!=='loading'&&Date.now()-Math.max(followsUpdatedAt,followsStartedAt)>=FOLLOW_AGE)void autoWhitelistFollowedAccounts();},1000);
     window.addEventListener('pagehide',flushDecisionCache);document.addEventListener('visibilitychange',()=>{if(document.hidden)flushDecisionCache();else{void refreshEnvironment();rescanPosts();}});
   }catch(_){reportIssue('startup','Content Manager could not start. Open its settings or reload Bluesky to retry.');updateMenuCommand();}

@@ -35,7 +35,7 @@ These separate editions use Liquid Ultra for topic filtering and Gemini 2.5 Flas
 | Script | Version | Source |
 | --- | --- | --- |
 | Reddit Advanced Content Filter AI | 0.1.4 | [reddit-advanced-content-filter-ai.user.js](reddit-advanced-content-filter-ai.user.js) |
-| BlueSky Content Manager AI | 0.1.9 | [bluesky-content-manager-ai.user.js](bluesky-content-manager-ai.user.js) |
+| BlueSky Content Manager AI | 0.1.10 | [bluesky-content-manager-ai.user.js](bluesky-content-manager-ai.user.js) |
 
 When picture analysis is enabled, Gemini receives eligible pictures and returns descriptions; Liquid receives the post text and those descriptions, applies topic exceptions, and makes the final filtering decision. Gemini receives no original post text or user topics, and Liquid receives no image data. Both stages use the existing OpenRouter key and count toward the existing daily limits. The key must permit both models. Failed or incomplete scans keep posts visible. Updating preserves saved preferences and credentials; the existing picture toggle controls Gemini.
 
@@ -48,6 +48,8 @@ This release retains the v0.1.2 fix for repeated AI requests after returning to 
 Greasy Fork publication is on hold. This upload does not create or relist either AI edition there. The original non-AI scripts and their synchronization remain unchanged. These are testing builds; model decisions can be wrong, and enabled AI sends eligible post content to OpenRouter and its provider.
 
 Reddit AI v0.1.4 checks already-loaded feed cards up to two screens below and one screen above the viewport, prioritizing visible cards. The same range applies while preparing pictures and dispatching provider requests, and observers adapt after resizing. Preview labels matches and Hide removes them before they enter view when the checks finish in time. Fast scrolling, slow providers, or exhausted limits can still leave unchecked posts visible. Looking ahead can spend the existing daily allowance on posts that are never viewed; budget, pacing, privacy exclusions and Keep overrides remain in force. This does not fetch additional Reddit pages or force lazy-loaded cards into the feed.
+
+Bluesky AI v0.1.10 carries the applicable Reddit AI v0.1.4 changes: Unicode and separator normalization, Unicode word boundaries and regular English plurals, article-preview and URL-path evidence, small thumbnails and permitted srcset/poster selection, bounded head-and-tail text, full-content decision invalidation, guarded Preview actions, and bounded lookahead with visible-first scheduling. Single-word rules now follow Reddit's regular-plural matching instead of Bluesky's former broad verb-suffix matching; add irregular or other word forms explicitly. Prior Keep overrides remain recognized, and saved settings, accounts, followed-account allowlists, credentials, News/all-feed scope, provider models, host restrictions and daily limits are retained. Bluesky keeps its single-origin budget; Reddit's www/Old Reddit split does not apply. This update changes the AI edition only. Live installed-browser behavior and Greasy Fork synchronization are unverified.
 
 ## Greasy Fork synchronization
 
