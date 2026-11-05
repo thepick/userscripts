@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bluesky Multi-Column
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      2026.11.2.2
+// @version      2026.11.5.1
 // @description  Configurable Bluesky masonry feeds with navigation recovery and sidebar controls.
 // @author       Pedro; thepick
 // @license      MIT
@@ -174,7 +174,7 @@ function findFeed(main) {
 function layout() {
     const main = document.querySelector('main, [role="main"]');
     const left = document.querySelector('nav[role="navigation"]');
-    const active = innerWidth >= 800 && Boolean(main && left?.offsetWidth);
+    const active = innerWidth >= 800 && !/^\/messages(?:\/|$)/.test(location.pathname) && Boolean(main && left?.offsetWidth);
     toggle(root, 'bmc-active', active);
     if (!active) { toggle(root, 'bmc-hide-right', false); releaseFeed(); return; }
     const right = findRightNav(main);

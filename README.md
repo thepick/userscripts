@@ -61,6 +61,8 @@ Added November 2, 2026: Reddit Multi-Column Robust is **unlisted** on Greasy For
 
 Updated November 2, 2026: **Bluesky Multi-Column** replaces the former Bluesky Enhanced Layout code on existing listing **520439**. The stable source filename remains `bluesky-enhanced-layout.user.js`, preserving its webhook connection. Release **2026.11.2.2** imports the current Greasy Fork implementation and keeps its script identity, update links, credits, and MIT license. Future changes should be made in this GitHub file so the existing webhook can publish them to Greasy Fork.
 
+Updated November 5, 2026: **Bluesky Multi-Column 2026.11.5.1** leaves Messages and conversation pages in their native layout, including navigation from a feed. Returning to a feed restores the multi-column layout.
+
 The table below records the configured source URLs. To reconnect a listing, open **Admin > Source Syncing**, enter its matching raw URL, choose **Manual** while setting up, and select **Update and sync now**. Use the existing listing so its history, feedback, and installation links stay together.
 
 | Script | Raw URL for Source Syncing |
