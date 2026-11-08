@@ -28,7 +28,7 @@ The initial imports preserved the Greasy Fork downloads exactly, including their
 
 ## AI test editions — GitHub only
 
-These separate editions use Liquid Ultra for topic filtering and Gemini 2.5 Flash-Lite for optional picture scanning, with Preview/Hide actions and review history. They retain the original filters and whitelist overrides. New installations start with AI disabled; configure your own OpenRouter key and topics. Keys stay in userscript-manager storage and are excluded from settings exports. Disable the original filter for that site while testing its AI edition.
+These separate editions use Liquid Ultra for topic filtering and Gemini 2.5 Flash-Lite for optional picture scanning, with Preview/Hide actions and review history. They retain the original filters and whitelist overrides. New installations start with AI disabled; configure your own OpenRouter key and topics. Keys stay in userscript-manager storage and are excluded from settings exports.
 
 | Script | Version | Source |
 | --- | --- | --- |
