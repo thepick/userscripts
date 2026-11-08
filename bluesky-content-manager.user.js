@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bluesky Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.0
+// @version      4.01
 // @description  Filter Bluesky by meaning with optional OpenRouter AI topics, preview and reveal controls, plus keyword, account, allowlist, and alt-text filters.
 // @author       Stuart Saddler
 // @license      MIT
@@ -98,6 +98,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 .bcm-history-tabs{margin:10px 0 14px}.bcm-dialog .bcm-history-tabs button[aria-selected="true"]{color:var(--bcm-accent);background:var(--bcm-info);border-color:var(--bcm-accent)}
 .bcm-history{list-style:none;padding:0;margin:10px 0}.bcm-history li{border-bottom:1px solid var(--bcm-line);padding:10px 0;overflow-wrap:anywhere}.bcm-history p{margin:4px 0}.bcm-pager{justify-content:space-between}
 .bcm-notice{position:fixed;bottom:16px;right:16px;z-index:1000000;max-width:min(380px,calc(100% - 32px));padding:12px 16px;border:1px solid #8ba3b5;border-radius:8px;background:#172b3a;color:white;font:14px/1.4 system-ui,sans-serif;cursor:pointer}
+@supports (grid-template-rows:subgrid){
+    @media (width > 560px){
+        #bcm-panel-filters .bcm-editors{row-gap:0}
+        #bcm-panel-filters .bcm-editor{display:grid;grid-template-rows:subgrid;grid-row:span 4}
+    }
+}
 @media(max-width:560px){.bcm-editors{grid-template-columns:1fr}.bcm-head,.bcm-actions,.bcm-body{padding:13px 15px}.bcm-actions{flex-wrap:wrap}.bcm-actions .bcm-row{margin-left:auto}.bcm-nav{padding-inline:5px}}
 @media(max-width:390px){.bcm-nav{display:grid;grid-template-columns:1fr 1fr;gap:0}.bcm-dialog .bcm-nav button{text-align:left}}
 @media(pointer:coarse){.bcm-dialog button,.bcm-dialog .bcm-check{min-height:44px}.bcm-dialog textarea,.bcm-dialog input:not([type="checkbox"]):not([type="radio"]):not([type="file"]){min-height:44px;font-size:16px}}
