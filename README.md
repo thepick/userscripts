@@ -10,7 +10,7 @@ The initial imports preserved the Greasy Fork downloads exactly, including their
 | --- | --- | --- | --- |
 | Reddit Advanced Content Filter | 3.1.0 | [Source](reddit-advanced-content-filter.user.js) / [Setup guide](docs/reddit-advanced-content-filter-ai/README.md) | [Listing](https://greasyfork.org/en/scripts/516666) |
 | Remove Disable Adblock Nag Screen on 1mov.lol | 1.5 | [remove-disable-adblock-nag-screen.user.js](remove-disable-adblock-nag-screen.user.js) | [Listing](https://greasyfork.org/en/scripts/513207) |
-| Bluesky Content Manager | 3.5.2 | [bluesky-content-manager.user.js](bluesky-content-manager.user.js) | [Listing](https://greasyfork.org/en/scripts/518614) |
+| Bluesky Content Manager | 3.5.2 | [Source](bluesky-content-manager.user.js) / [Setup guide](docs/bluesky-content-manager/README.md) | [Listing](https://greasyfork.org/en/scripts/518614) |
 | Bluesky Multi-Column | 1.7 | [bluesky-enhanced-layout.user.js](bluesky-enhanced-layout.user.js) | [Listing](https://greasyfork.org/en/scripts/520439-bluesky-multi-column) |
 | Bluesky Unified Block & Hide | 1.2 | [bluesky-unified-block-hide.user.js](bluesky-unified-block-hide.user.js) | [Listing](https://greasyfork.org/en/scripts/522022) |
 | DeepSeek Wide Mode | 1.1 | [deepseek-wide-mode.user.js](deepseek-wide-mode.user.js) | [Listing](https://greasyfork.org/en/scripts/524537) |
@@ -31,10 +31,6 @@ The initial imports preserved the Greasy Fork downloads exactly, including their
 
 The Reddit and Bluesky AI filters use Liquid Ultra for topic filtering and Gemini 2.5 Flash-Lite for optional picture scanning, with Preview/Hide actions and review history. They retain the original filters and whitelist overrides. New installations start with AI disabled; configure your own OpenRouter key and topics. Keys stay in userscript-manager storage and are excluded from settings exports.
 
-| Script | Version | Source |
-| --- | --- | --- |
-| BlueSky Content Manager AI | 0.1.10 | [bluesky-content-manager-ai.user.js](bluesky-content-manager-ai.user.js) |
-
 When picture analysis is enabled, Gemini receives eligible pictures and returns descriptions; Liquid receives the post text and those descriptions, applies topic exceptions, and makes the final filtering decision. Gemini receives no original post text or user topics, and Liquid receives no image data. Both stages use the existing OpenRouter key and count toward the existing daily limits. The key must permit both models. Failed or incomplete scans keep posts visible. Updating preserves saved preferences and credentials; the existing picture toggle controls Gemini.
 
 Reddit Advanced Content Filter v0.1.3 catches fullwidth and invisible-character variants in keyword rules and treats whitespace, dashes, and underscores as equivalent separators in phrases. Existing whole-word boundaries, regular plurals, literal phrase substrings, and whitelist precedence remain. Relevant image descriptions, article titles, and external article-link paths now contribute evidence; URL queries and fragments are excluded, and external articles are not downloaded. UI and navigation attributes are excluded. Optional image scanning selects one permitted URL per image, falls back to the largest permitted `srcset` candidate when needed, and includes video posters within the existing four-picture cap. Late title and poster changes are observed.
@@ -43,11 +39,11 @@ Long-post AI evidence retains the original first 10,000 characters and adds a bo
 
 This release retains the v0.1.2 fix for repeated AI requests after returning to a feed when Reddit's account header is unavailable. The fallback identity survives navigation and reloads in the same tab. Saved AI decisions remain bounded to 1,000 entries and seven days; changed content or topics require a new check. Identified accounts remain separate, and unidentified independent tabs use separate identities. When tab storage is blocked, the fallback lasts only for the current document.
 
-Reddit Advanced Content Filter 4.0 uses the existing Greasy Fork listing and the original GitHub source filename. The Bluesky AI test edition is available on GitHub. Model decisions can be wrong, and enabled AI sends eligible post content to OpenRouter and its provider.
+Reddit Advanced Content Filter 4.0 uses the existing Greasy Fork listing and the original GitHub source filename. Model decisions can be wrong, and enabled AI sends eligible post content to OpenRouter and its provider.
 
 Reddit Advanced Content Filter v0.1.4 checks already-loaded feed cards up to two screens below and one screen above the viewport, prioritizing visible cards. The same range applies while preparing pictures and dispatching provider requests, and observers adapt after resizing. Preview labels matches and Hide removes them before they enter view when the checks finish in time. Fast scrolling, slow providers, or exhausted limits can still leave unchecked posts visible. Looking ahead can spend the existing daily allowance on posts that are never viewed; budget, pacing, privacy exclusions and Keep overrides remain in force. This does not fetch additional Reddit pages or force lazy-loaded cards into the feed.
 
-Bluesky AI v0.1.10 carries the applicable Reddit Advanced Content Filter v0.1.4 changes: Unicode and separator normalization, Unicode word boundaries and regular English plurals, article-preview and URL-path evidence, small thumbnails and permitted srcset/poster selection, bounded head-and-tail text, full-content decision invalidation, guarded Preview actions, and bounded lookahead with visible-first scheduling. Single-word rules now follow Reddit's regular-plural matching instead of Bluesky's former broad verb-suffix matching; add irregular or other word forms explicitly. Prior Keep overrides remain recognized, and saved settings, accounts, followed-account allowlists, credentials, News/all-feed scope, provider models, host restrictions and daily limits are retained. Bluesky keeps its single-origin budget; Reddit's www/Old Reddit split does not apply. This update changes the AI edition only. Live installed-browser behavior and Greasy Fork synchronization are unverified.
+Bluesky Content Manager 4.0 brings optional AI filtering and the tabbed settings interface to the existing Greasy Fork listing. It keeps the Bluesky-specific feed scope, account and followed-account overrides, and alt-text controls. See the [setup guide](docs/bluesky-content-manager/README.md) for backup migration and AI privacy details.
 
 ## Greasy Fork synchronization
 

@@ -6,19 +6,21 @@ const {webcrypto} = require('node:crypto');
 
 function load(values={}) {
   let source=fs.readFileSync(require('node:path').join(__dirname,'../bluesky-content-manager.user.js'),'utf8');
-  source=source.replace(/\nmain\(\);\s*\n/, '\nObject.assign(globalThis, {termToRegex, regexMatchAny, initializeSettings, normalizeUsername, ...(typeof readSettings === "function" ? {readSettings} : {}), ...(typeof validateSettings === "function" ? {validateSettings} : {}), ...(typeof parsePostURL === "function" ? {parsePostURL} : {}), ...(typeof getActiveAccount === "function" ? {getActiveAccount} : {})});\n');
+  source=source.replace(/^\s*main\(\);\s*$/m, '\nObject.assign(globalThis, {termToRegex, regexMatchAny, initializeSettings, normalizeUsername, readSettings, validateSettings, parsePostURL, getActiveAccount});\n');
   const storage=new Map(Object.entries(values));
   const context={console,URL,TextEncoder,crypto:webcrypto,setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},performance,location:{origin:'https://bsky.app',pathname:'/'},window:{location:{pathname:'/'},addEventListener(){},matchMedia:()=>({matches:false})},document:{body:{},documentElement:{},addEventListener(){},querySelector(){return null},querySelectorAll(){return []}},localStorage:{getItem(){return null}},GM_addStyle(){},GM_getValue:(key,fallback)=>storage.has(key)?storage.get(key):fallback,GM_setValue:(key,value)=>storage.set(key,value),GM_registerMenuCommand:()=>1,GM_unregisterMenuCommand(){}};
   vm.createContext(context);vm.runInContext(source,context);return context;
 }
-test('matching preserves literal punctuation, suffixes, and phrase behavior',()=>{
+test('matching supports literal punctuation, regular plurals, Unicode, and equivalent phrase separators',()=>{
   const api=load();
   assert.equal(api.regexMatchAny('C++',['c++']),'c++');
   assert.equal(api.regexMatchAny('dogmatic',['dog']),null);
   assert.equal(api.regexMatchAny('dogs',['dog']),'dog');
-  assert.equal(api.regexMatchAny('cities',['city']),null);
-  assert.equal(api.regexMatchAny('cater',['cat']),'cat');
+  assert.equal(api.regexMatchAny('cities',['city']),'city');
+  assert.equal(api.regexMatchAny('cater',['cat']),null);
   assert.equal(api.regexMatchAny('a new yorker',['new york']),'new york');
+  assert.equal(api.regexMatchAny('a new_yorker',['new york']),'new york');
+  assert.equal(api.regexMatchAny('\uff43ity',['city']),'city');
 });
 test('compiled matching rules are reused',()=>{
   const api=load();assert.equal(api.termToRegex('dog'),api.termToRegex('dog'));
@@ -55,8 +57,8 @@ test('a transient storage read failure retains the last valid settings',()=>{
 test('a settings change invalidates in-flight fingerprint work before the new context hash is ready',async()=>{
   let source=fs.readFileSync(require('node:path').join(__dirname,'../bluesky-content-manager.user.js'),'utf8');
   const api=load(),deferred=[];api.crypto={subtle:{digest:()=>new Promise(resolve=>deferred.push(resolve))}};
-  source=source.replace(/\nmain\(\);\s*\n/,`\nwindow.race=async()=>{
-    const post={isConnected:true,classList:{toggle(){},remove(){}}};getPostContainer=()=>post;
+  source=source.replace(/^\s*main\(\);\s*$/m,`\nwindow.race=async()=>{
+    const post={isConnected:true,classList:{toggle(){},remove(){},contains(){return false;}}};getPostContainer=()=>post;
     getPostData=()=>({identity:{url:'https://bsky.app/profile/alice/post/abc'},author:'@alice',text:'newword',general:'newword',names:'Alice',labels:'',images:[]});rescanPosts=()=>{};
     installSettings({filteredTerms:['oldword'],manualWhitelistTerms:[],autoWhitelistEnabled:false,altTextEnforcementEnabled:false});decisionContext='old-context';
     const pending=processPost(post);await Promise.resolve();installSettings({filteredTerms:['newword'],manualWhitelistTerms:[],autoWhitelistEnabled:false,altTextEnforcementEnabled:false});

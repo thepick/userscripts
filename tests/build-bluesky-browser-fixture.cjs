@@ -10,12 +10,13 @@ async reset(values={},keepStorage=false){
  window.testObserver?.disconnect();clearTimeout(queueTimer);clearTimeout(cacheTimer);clearTimeout(menuTimer);queueTimer=cacheTimer=menuTimer=null;
  document.getElementById('posts').replaceChildren();blockedPosts.clear();blockedCache.clear();pendingCache.clear();pendingPosts.clear();processedPosts=new WeakMap();postRuns=new WeakMap();issues.clear();
  currentUserDid='';followAccount=null;followEnabled=null;followEpoch++;followReady=true;followState='disabled';followsUpdatedAt=followsStartedAt=0;lastSiteStorage=null;siteState={};lastPath='';settingsRaw=null;settingsLoaded=false;
- settings={filteredTerms:[],manualWhitelistTerms:[],autoWhitelistEnabled:false,altTextEnforcementEnabled:false};
+ settings={filteredTerms:[],manualWhitelistTerms:[],autoWhitelistEnabled:false,altTextEnforcementEnabled:false,ai:validateAI()};
+ resetAI();
  if(!keepStorage)window.testValues=new Map(Object.entries({filteredTerms:JSON.stringify(['forbidden']),...values}));
  initializeSettings();loadDecisionCache();await refreshEnvironment(true);window.decisions=0;
 },start:main};
 `;
-const instrumented = source.replace(/\nmain\(\);\s*\n/,expose).replace('function decidePost(post,data){','function decidePost(post,data){ window.decisions++;');
+const instrumented = source.replace(/^\s*main\(\);\s*$/m,expose).replace(/function decidePost\(post,\s*data\)\s*\{/, '$& window.decisions++;');
 const mocks = `
 window.testValues=new Map();window.testWrites=[];window.testRequests=[];window.testSite={colorMode:'light',session:{accounts:[]}};window.networkMode='success';window.testFollowPages=[];window.testFailKey='';window.testRemoteListeners=[];
 Object.defineProperty(window,'localStorage',{value:{getItem:()=>JSON.stringify(window.testSite)}});
@@ -24,6 +25,7 @@ window.GM_setValue=(key,value)=>{if(key===testFailKey)throw Error('Simulated sto
 window.GM_addStyle=css=>{const style=document.createElement('style');style.textContent=css;document.head.append(style)};
 window.GM_registerMenuCommand=(label,callback)=>{window.testMenu=callback;return 1};window.GM_unregisterMenuCommand=()=>{};
 window.GM_addValueChangeListener=(key,callback)=>testRemoteListeners.push(callback);
+window.confirm=()=>true;
 window.GM_xmlhttpRequest=options=>{testRequests.push(options);if(networkMode==='hold')return;queueMicrotask(()=>{if(networkMode==='error')options.onerror();else options.onload({status:200,responseText:JSON.stringify(testFollowPages.shift()||{follows:[]})})})};
 const actualURLCreate=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{window.testExportBlob=blob;return actualURLCreate(blob)};
 const actualAnchorClick=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){if(!this.download)actualAnchorClick.call(this)};
