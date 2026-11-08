@@ -3,7 +3,7 @@
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
 // @version      4.0
 // @description  Optional Liquid Ultra AI topic and picture filtering, with keyword/subreddit blocking, whitelist overrides, preview, history, and local backups.
-// @author       Stuart Saddler (locally revised)
+// @author       Stuart Saddler
 // @license      MIT
 // @match        *://www.reddit.com/*
 // @match        *://old.reddit.com/*
@@ -25,9 +25,6 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_unregisterMenuCommand
 // ==/UserScript==
-// Based on Reddit Advanced Content Filter 3.2.0 by Stuart Saddler (MIT).
-// Original source: https://github.com/thepick/userscripts
-// Separate local AI edition; no remote update or publication is configured.
 
 (function () {
     'use strict';
