@@ -34,7 +34,7 @@ These separate editions use Liquid Ultra for topic filtering and Gemini 2.5 Flas
 
 | Script | Version | Source |
 | --- | --- | --- |
-| Reddit Advanced Content Filter AI | 0.1.4 | [reddit-advanced-content-filter-ai.user.js](reddit-advanced-content-filter-ai.user.js) |
+| Reddit Advanced Content Filter AI | 0.1.5 | [Source](reddit-advanced-content-filter-ai.user.js) / [Setup guide](docs/reddit-advanced-content-filter-ai/README.md) |
 | BlueSky Content Manager AI | 0.1.10 | [bluesky-content-manager-ai.user.js](bluesky-content-manager-ai.user.js) |
 
 When picture analysis is enabled, Gemini receives eligible pictures and returns descriptions; Liquid receives the post text and those descriptions, applies topic exceptions, and makes the final filtering decision. Gemini receives no original post text or user topics, and Liquid receives no image data. Both stages use the existing OpenRouter key and count toward the existing daily limits. The key must permit both models. Failed or incomplete scans keep posts visible. Updating preserves saved preferences and credentials; the existing picture toggle controls Gemini.
