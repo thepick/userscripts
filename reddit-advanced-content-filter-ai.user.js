@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Reddit Advanced Content Filter AI
+// @name         Reddit Advanced Content Filter
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      0.1.5
+// @version      3.3.0
 // @description  Optional Liquid Ultra AI topic and picture filtering, with keyword/subreddit blocking, whitelist overrides, preview, history, and local backups.
 // @author       Stuart Saddler (locally revised)
 // @license      MIT
@@ -129,20 +129,23 @@
     }
 
     const readConfiguration = runAsync(function* () {
-        const snapshot = yield GM.getValue(settingsKey, null);
+        let snapshot = yield GM.getValue(settingsKey, null);
+        const originalSettings = snapshot === null;
+        if (originalSettings) snapshot = yield GM.getValue('rafSettingsV1', null);
         const config = { blocklist: blocklistArr, whitelist: whitelistArr, ai: settings.ai }, warnings = [];
         if (snapshot !== null) {
             if (!snapshot || snapshot.version !== 1) {
                 warnings.push('Saved settings are invalid. Their original data has not been overwritten. Restore a backup or correct the lists before saving.');
                 return Object.assign(config, { revision: 'invalid:' + JSON.stringify(snapshot), warnings });
             }
-            const revision = typeof snapshot.revision === 'string' ? snapshot.revision : 'invalid:' + JSON.stringify(snapshot);
+            const revision = (originalSettings ? 'original:' : '') +
+                (typeof snapshot.revision === 'string' ? snapshot.revision : 'invalid:' + JSON.stringify(snapshot));
             if (typeof snapshot.revision !== 'string') warnings.push('The saved settings record needs repair. Available lists were recovered; export a backup, then save to repair the record.');
             for (const key of ['blocklist', 'whitelist']) {
                 try { config[key] = normalizeList(snapshot[key]); }
                 catch (e) { warnings.push('The saved ' + key + ' is invalid. Other settings were recovered; correct this list before saving.'); }
             }
-            try { config.ai = validateAI(snapshot.ai); } catch (e) { config.ai = validateAI(); warnings.push('Saved AI settings are invalid. AI is off; review and save them again.'); }
+            try { config.ai = validateAI(originalSettings ? undefined : snapshot.ai); } catch (e) { config.ai = validateAI(); warnings.push('Saved AI settings are invalid. AI is off; review and save them again.'); }
             return Object.assign(config, { revision, warnings });
         }
         const legacy = yield Promise.all([GM.getValue('blocklist', []), GM.getValue('whitelist', [])]);
@@ -208,7 +211,7 @@
                 if (typeof GM_unregisterMenuCommand !== 'function') return;
                 GM_unregisterMenuCommand(menuCommand);
             }
-            menuCommand = GM_registerMenuCommand('Configure Reddit AI (' + blockedPosts.size + ' blocked/hidden; ' + aiMatches.size + ' AI matches; ' + aiChecked.size + ' checked' + (settings.ai.enabled && Date.now()<aiCooldown ? '; AI waiting' : '') + (issues.size ? '; needs attention' : '') + ')', showConfig);
+            menuCommand = GM_registerMenuCommand('Configure Reddit Filter (' + blockedPosts.size + ' blocked/hidden; ' + aiMatches.size + ' AI matches; ' + aiChecked.size + ' checked' + (settings.ai.enabled && Date.now()<aiCooldown ? '; AI waiting' : '') + (issues.size ? '; needs attention' : '') + ')', showConfig);
         } catch (error) { console.warn('[Reddit Filter] Could not update menu:', error); }
     }
 
@@ -595,7 +598,7 @@
         dialog.innerHTML = `
             <div class="raf-shell">
                 <header class="raf-head">
-                    <div><p>Reddit Filter AI</p><h2 id="raf-heading" tabindex="-1">Settings</h2></div>
+                    <div><p>Reddit Advanced Content Filter</p><h2 id="raf-heading" tabindex="-1">Settings</h2></div>
                     <a href="https://github.com/thepick/userscripts/blob/main/docs/reddit-advanced-content-filter-ai/README.md" target="_blank" rel="noopener noreferrer">Setup guide</a>
                 </header>
                 <div class="raf-nav" id="raf-settings-tabs" role="tablist" aria-label="Settings sections">
@@ -1066,7 +1069,7 @@ const requestAI = runAsync(function* (job,key,ready=()=>true,prepared){
   const payload=prepared||(yield aiRequestPayload(job,ready));
   if(!ready())throw Object.assign(Error('The post changed before classification.'),{unsent:true,stale:true});
   return new Promise((resolve,reject)=>{
-  GM_xmlhttpRequest({method:'POST',url:'https://openrouter.ai/api/alpha/decisions',anonymous:true,timeout:20000,headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','X-Title':'Reddit Advanced Content Filter AI'},data:JSON.stringify(payload),onload(response){try{if(response.status===429)throw Object.assign(Error('OpenRouter is temporarily rate limited.'),{status:429,retryAfter:aiRetryAfter(response.responseHeaders)});if(response.status!==200)throw Error(response.status===401?'OpenRouter rejected the key. Save a valid key.':response.status===402?'OpenRouter credit limit reached. Check your account.':response.status===429?'OpenRouter rate limit reached. Retry in a minute.':`OpenRouter returned HTTP ${response.status}. Retry in a minute.`);const body=JSON.parse(response.responseText);if(body.error&&body.error.code===429)throw Object.assign(Error('OpenRouter is temporarily rate limited.'),{status:429,retryAfter:aiRetryAfter(response.responseHeaders)});resolve(body);}catch(error){reject(error);}},onerror:()=>reject(Error('OpenRouter could not be reached. Retry in a minute.')),ontimeout:()=>reject(Error('OpenRouter timed out. Retry in a minute.'))});
+  GM_xmlhttpRequest({method:'POST',url:'https://openrouter.ai/api/alpha/decisions',anonymous:true,timeout:20000,headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','X-Title':'Reddit Advanced Content Filter'},data:JSON.stringify(payload),onload(response){try{if(response.status===429)throw Object.assign(Error('OpenRouter is temporarily rate limited.'),{status:429,retryAfter:aiRetryAfter(response.responseHeaders)});if(response.status!==200)throw Error(response.status===401?'OpenRouter rejected the key. Save a valid key.':response.status===402?'OpenRouter credit limit reached. Check your account.':response.status===429?'OpenRouter rate limit reached. Retry in a minute.':`OpenRouter returned HTTP ${response.status}. Retry in a minute.`);const body=JSON.parse(response.responseText);if(body.error&&body.error.code===429)throw Object.assign(Error('OpenRouter is temporarily rate limited.'),{status:429,retryAfter:aiRetryAfter(response.responseHeaders)});resolve(body);}catch(error){reject(error);}},onerror:()=>reject(Error('OpenRouter could not be reached. Retry in a minute.')),ontimeout:()=>reject(Error('OpenRouter timed out. Retry in a minute.'))});
 });});
 const drainAI = runAsync(function* (){
   if(aiBusy||Date.now()<aiCooldown||document.hidden||(dialogElement&&dialogElement.open))return;aiBusy=true;

@@ -1,13 +1,15 @@
-# Reddit Advanced Content Filter AI
+# Reddit Advanced Content Filter
 
 Use keyword and subreddit rules to filter Reddit. You can also enable AI topic filtering through OpenRouter and optionally include pictures. AI starts off. This is the GitHub test edition for www.reddit.com and old.reddit.com.
 
 ## Quick start
 
-1. On Reddit, open your userscript manager's **Configure Reddit AI** command.
+1. On Reddit, open your userscript manager's **Configure Reddit Filter** command.
 2. In **Filters**, add keywords, phrases, or subreddit names to the blocklist and whitelist. Enter one item per line. Use **Test a keyword rule** to try a title before saving.
 3. To try AI, open **AI filtering**, save an OpenRouter API key, enter one topic per line, and turn on **Enable AI**. Start with **Preview** to label matches while keeping the posts visible. Choose **Hide** to remove matched posts from the feed.
 4. Choose **Save changes** to apply the draft. **Save API key** and **Remove API key** update the connection separately. Your key is stored by the userscript manager and excluded from backups.
+
+If you update an existing installation from version 3.2.0, your saved blocklist and whitelist carry over. AI filtering starts off for that upgrade.
 
 ## How rules match
 
