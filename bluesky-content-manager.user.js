@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bluesky Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.01
+// @version      4.02
 // @description  Filter Bluesky by meaning with optional OpenRouter AI topics, preview and reveal controls, plus keyword, account, allowlist, and alt-text filters.
 // @author       Stuart Saddler
 // @license      MIT
@@ -40,6 +40,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     const AI_POLICY = 6;
     const AI_MODEL = '~liquid/d1-ultra-latest', AI_RESERVE = .005, AI_AGE = 7 * 86400000;
     const NEWS_FEED = 'at://did:plc:kkf4naxqmweop7dv4l2iqqf5/app.bsky.feed.generator/verified-news';
+    const MAX_AI_TOPIC_LENGTH = 1000;
     const aiDefaults = { enabled: false, mode: 'preview', scope: 'news', analyzeImages: false, topics: [], budget: .10, requestLimit: 200 };
     /*** CONFIG & GLOBALS ***/
     const SETTINGS_KEY = 'bcmSettingsV1', CACHE_KEY = 'bcmBlockedCacheV1';
@@ -936,7 +937,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             const lines = topics.value.split('\n');
             const unique = Array.from(new Set(lines.map(line => line.trim()).filter(Boolean)));
             topics.setCustomValidity(lines.length > 20 ? 'Use at most 20 lines for AI topics.' :
-                lines.some(line => line.length > 500) ? 'Limit each topic to 500 characters.' :
+                lines.some(line => line.length > MAX_AI_TOPIC_LENGTH) ? `Limit each topic to ${MAX_AI_TOPIC_LENGTH.toLocaleString('en-US')} characters.` :
                     unique.join('\n').length > 3000 ? 'Keep all AI topics together under 3,000 characters.' : '');
             return [topics, find('bcm-ai-budget'), find('bcm-ai-limit')].find(field => !field.validity.valid);
         }
@@ -1432,8 +1433,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     let updateAIStatus = () => { };
     function validateAI(value = aiDefaults) {
         var _a;
-        if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean' || (value.analyzeImages !== undefined && typeof value.analyzeImages !== 'boolean') || !['preview', 'hide'].includes(value.mode) || !['news', 'all'].includes(value.scope) || !Array.isArray(value.topics) || value.topics.length > 20 || value.topics.some(t => typeof t !== 'string' || t.length > 500) || !Number.isFinite(value.budget) || value.budget < .01 || value.budget > 10 || !Number.isInteger(value.requestLimit) || value.requestLimit < 1 || value.requestLimit > 5000)
-            throw Error('AI settings need up to 20 topics (500 characters each), a daily budget of $0.01–$10, and 1–5,000 requests.');
+        if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean' || (value.analyzeImages !== undefined && typeof value.analyzeImages !== 'boolean') || !['preview', 'hide'].includes(value.mode) || !['news', 'all'].includes(value.scope) || !Array.isArray(value.topics) || value.topics.length > 20 || value.topics.some(t => typeof t !== 'string' || t.length > MAX_AI_TOPIC_LENGTH) || !Number.isFinite(value.budget) || value.budget < .01 || value.budget > 10 || !Number.isInteger(value.requestLimit) || value.requestLimit < 1 || value.requestLimit > 5000)
+            throw Error(`AI settings need up to 20 topics (${MAX_AI_TOPIC_LENGTH.toLocaleString('en-US')} characters each), a daily budget of $0.01–$10, and 1–5,000 requests.`);
         const topics = [...new Set(value.topics.map(t => t.trim()).filter(Boolean))];
         if (topics.join('\n').length > 3000)
             throw Error('Keep all AI topic descriptions together under 3,000 characters.');
