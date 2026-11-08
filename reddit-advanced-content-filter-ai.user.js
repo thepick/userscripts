@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Advanced Content Filter
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      3.3.0
+// @version      4.0
 // @description  Optional Liquid Ultra AI topic and picture filtering, with keyword/subreddit blocking, whitelist overrides, preview, history, and local backups.
 // @author       Stuart Saddler (locally revised)
 // @license      MIT
