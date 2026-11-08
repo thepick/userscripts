@@ -2,7 +2,7 @@
 
 Filter Bluesky by keyword, phrase, account, or image alt text. Version 4.0 adds the settings layout used by Reddit Advanced Content Filter and optional AI topic filtering. AI starts off on a standard upgrade or fresh install.
 
-![Bluesky Content Manager settings preview](https://raw.githubusercontent.com/thepick/userscripts/main/docs/bluesky-content-manager/bluesky-content-manager-settings-preview.png)
+![Bluesky Content Manager settings preview](https://raw.githubusercontent.com/thepick/userscripts/6a178ab0d79622e10587ad41814b4ad7001e6356/docs/bluesky-content-manager/bluesky-content-manager-settings-preview.png)
 
 ## Quick start
 
