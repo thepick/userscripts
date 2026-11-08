@@ -1,6 +1,6 @@
 # Reddit Advanced Content Filter AI
 
-Use keyword and subreddit rules to filter Reddit. You can also enable AI topic filtering through OpenRouter and optionally include pictures. AI starts off. This is the GitHub test edition for www.reddit.com and old.reddit.com. Disable the original Reddit filter while testing this edition so both scripts do not hide posts independently.
+Use keyword and subreddit rules to filter Reddit. You can also enable AI topic filtering through OpenRouter and optionally include pictures. AI starts off. This is the GitHub test edition for www.reddit.com and old.reddit.com.
 
 ## Quick start
 
