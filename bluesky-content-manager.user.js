@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bluesky Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.03
+// @version      4.04
 // @description  Filter Bluesky by meaning with optional OpenRouter AI topics, preview and reveal controls, plus keyword, account, allowlist, and alt-text filters.
 // @author       Stuart Saddler
 // @license      MIT
@@ -1161,7 +1161,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             const unique = Array.from(new Set(lines.map(line => line.trim()).filter(Boolean)));
             topics.setCustomValidity(lines.length > 20 ? 'Use at most 20 lines for AI topics.' :
                 lines.some(line => line.length > MAX_AI_TOPIC_LENGTH) ? `Limit each topic to ${MAX_AI_TOPIC_LENGTH.toLocaleString('en-US')} characters.` :
-                    unique.join('\n').length > 3000 ? 'Keep all AI topics together under 3,000 characters.' : '');
+                    '');
             return [topics, find('bcm-ai-budget'), find('bcm-ai-limit')].find(field => !field.validity.valid);
         }
         function revealAIField(field) {
@@ -1658,8 +1658,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean' || (value.analyzeImages !== undefined && typeof value.analyzeImages !== 'boolean') || !['preview', 'hide'].includes(value.mode) || !['news', 'all'].includes(value.scope) || !Array.isArray(value.topics) || value.topics.length > 20 || value.topics.some(t => typeof t !== 'string' || t.length > MAX_AI_TOPIC_LENGTH) || !Number.isFinite(value.budget) || value.budget < .01 || value.budget > 10 || !Number.isInteger(value.requestLimit) || value.requestLimit < 1 || value.requestLimit > 5000)
             throw Error(`AI settings need up to 20 topics (${MAX_AI_TOPIC_LENGTH.toLocaleString('en-US')} characters each), a daily budget of $0.01–$10, and 1–5,000 requests.`);
         const topics = [...new Set(value.topics.map(t => t.trim()).filter(Boolean))];
-        if (topics.join('\n').length > 3000)
-            throw Error('Keep all AI topic descriptions together under 3,000 characters.');
         return { enabled: value.enabled, mode: value.mode, scope: value.scope, analyzeImages: (_a = value.analyzeImages) !== null && _a !== void 0 ? _a : false, topics, budget: value.budget, requestLimit: value.requestLimit };
     }
     function aiEnvironment() { let feed = ''; try {

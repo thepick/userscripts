@@ -48,6 +48,16 @@ for(const platform of ['bluesky','reddit']) {
   assert.equal(out.format,'unified-content-filter-backup');assert.equal(out.version,1);
   assert.deepEqual(plain(api.parse(JSON.stringify(out)).platforms),plain(b.platforms));
  });
+ test(platform+': long AI descriptions round-trip without a combined 3000-character cap',()=>{
+  const api=load(platform),topics=Array.from({length:20},(_,i)=>String(i).padStart(2,'0')+'x'.repeat(998));
+  const settings=Object.assign({},ai,{topics});
+  for(const input of [backup(undefined,{bluesky:{ai:settings},reddit:{ai:settings}}),{format:'reddit-advanced-content-filter-settings',version:1,blocklist:['cat'],whitelist:[],ai:settings}]){
+   const parsed=api.parse(JSON.stringify(input)),restored=api.parse(JSON.stringify(api.create(parsed.shared,parsed.platforms)));
+   assert.deepEqual(plain(restored.platforms.reddit.ai.topics),topics);
+  }
+  assert.throws(()=>api.parse(JSON.stringify(backup(undefined,{reddit:{ai:Object.assign({},settings,{topics:topics.concat('extra')})}}))),/20 topics/);
+  assert.throws(()=>api.parse(JSON.stringify(backup(undefined,{reddit:{ai:Object.assign({},settings,{topics:['x'.repeat(1001)]})}}))),/1,000/);
+ });
  test(platform+': count, entry, combined UTF-8 and file byte limits',()=>{
   const api=load(platform),list=Array.from({length:100000},(_,i)=>'term'+i);
   assert.equal(api.shared(list,list).blocklist.length,100000);

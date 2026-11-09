@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Advanced Content Filter
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.02
+// @version      4.03
 // @description  Optional Liquid Ultra AI topic and picture filtering, with keyword/subreddit blocking, whitelist overrides, preview, history, and local backups.
 // @author       Stuart Saddler
 // @license      MIT
@@ -929,7 +929,7 @@
             const unique = Array.from(new Set(lines.map(line => line.trim()).filter(Boolean)));
             topics.setCustomValidity(lines.length > 20 ? 'Use at most 20 lines for AI topics.' :
                 lines.some(line => line.length > MAX_AI_TOPIC_LENGTH) ? `Limit each topic to ${MAX_AI_TOPIC_LENGTH.toLocaleString('en-US')} characters.` :
-                unique.join('\n').length > 3000 ? 'Keep all AI topics together under 3,000 characters.' : '');
+                '');
             return [topics, find('rafai-ai-budget'), find('rafai-ai-limit')].find(field => !field.validity.valid);
         }
 
@@ -1211,7 +1211,6 @@ const aiDescribeImages = runAsync(function* (job,key,ready,limits){
 function validateAI(value=aiDefaults){
   if(!value||typeof value!=='object'||typeof value.enabled!=='boolean'||(value.analyzeImages!==undefined&&typeof value.analyzeImages!=='boolean')||!['preview','hide'].includes(value.mode)||value.scope!=='all'||!Array.isArray(value.topics)||value.topics.length>20||value.topics.some(t=>typeof t!=='string'||t.length>MAX_AI_TOPIC_LENGTH)||!Number.isFinite(value.budget)||value.budget<.01||value.budget>10||!Number.isInteger(value.requestLimit)||value.requestLimit<1||value.requestLimit>5000)throw Error(`AI settings need up to 20 topics (${MAX_AI_TOPIC_LENGTH.toLocaleString('en-US')} characters each), a daily budget of $0.01–$10, and 1–5,000 requests.`);
   const topics=[...new Set(value.topics.map(t=>t.trim()).filter(Boolean))];
-  if(topics.join('\n').length>3000)throw Error('Keep all AI topic descriptions together under 3,000 characters.');
   return {enabled:value.enabled,mode:value.mode,scope:value.scope,analyzeImages:value.analyzeImages==null?false:value.analyzeImages,topics,budget:value.budget,requestLimit:value.requestLimit};
 }
 function aiPayload(text,topics,images=[]){return aiBatchPayload([{text,topics,images}]);}
