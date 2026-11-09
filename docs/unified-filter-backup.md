@@ -1,13 +1,13 @@
 # Unified Filter Backup v1
 
-Bluesky Content Manager 4.03 and Reddit Advanced Content Filter 4.02 export one file that either script can import. This is a manual transfer, not automatic synchronization. Export the current draft from **Backups & reset**, import it in the other script, review it, and choose **Save changes**. Importing alone does not change active filtering or saved settings. Replacing a modified draft requires confirmation.
+Bluesky Content Manager 4.05 and Reddit Advanced Content Filter 4.04 export one file that either script can import. This is a manual transfer, not automatic synchronization. Export the current draft from **Backups & reset**, import it in the other script, review it, and choose **Save changes**. Importing alone does not change active filtering or saved settings. Replacing a modified draft requires confirmation.
 
 ```json
 {
   "format": "unified-content-filter-backup",
   "version": 1,
   "exportedAt": "2026-11-09T00:00:00.000Z",
-  "shared": { "blocklist": ["spoiler"], "allowlist": ["science"] },
+  "shared": { "blocklist": ["spoiler"], "allowlist": ["science"], "aiTopics": ["Sports except MMA"] },
   "platforms": {
     "bluesky": { "autoWhitelistEnabled": true, "altTextEnforcementEnabled": false },
     "reddit": {}
@@ -15,13 +15,13 @@ Bluesky Content Manager 4.03 and Reddit Advanced Content Filter 4.02 export one 
 }
 ```
 
-Both lists are required. `platforms` and either platform section may be absent. Each section can contain `ai` with the existing fields `enabled`, `mode`, `scope`, `analyzeImages`, `topics`, `budget`, and `requestLimit`. Bluesky accepts `news` or `all` scope; Reddit accepts `all`. No API keys, account tokens, cache, history, or Keep overrides belong in this format. Unknown platform/option fields are rejected rather than retained as an unchecked container for credentials. Unknown root fields are ignored and are not re-exported.
+Both lists are required. `platforms` and either platform section may be absent. Each section can contain `ai` with the existing fields `enabled`, `mode`, `scope`, `analyzeImages`, `budget`, and `requestLimit`. Bluesky accepts `news` or `all` scope; Reddit accepts `all`. No API keys, account tokens, cache, history, or Keep overrides belong in this format. Unknown platform/option fields are rejected rather than retained as an unchecked container for credentials. Unknown root fields are ignored and are not re-exported.
 
-Import replaces the shared lists. Present settings for the active platform update the draft; absent settings keep the current draft values. Settings for the other platform are validated and retained through Save, reload, and re-export. Partial retained sections merge with previously retained options. Export refreshes the active section from the current draft. The inactive section is only a saved copy: it cannot know about later changes made in the other script.
+Import replaces the shared lists and, when present, shared AI prompts. An explicit empty `aiTopics` list clears the prompts; an old lists-only backup leaves them unchanged. Present settings for the active platform update the draft; absent settings keep the current draft values. Settings for the other platform are validated and retained through Save, reload, and re-export. Partial retained sections merge with previously retained options. Export refreshes the active section from the current draft. The inactive section is only a saved copy: it cannot know about later changes made in the other script.
 
 ## Compatibility and limits
 
-Both scripts also read version 1 `bluesky-content-manager-settings` (nested `settings`) and `reddit-advanced-content-filter-settings` / `reddit-advanced-content-filter-ai-settings` (top-level lists). Cross-platform legacy import transfers shared lists and retains the source platform's supported options. Same-platform legacy import applies its supported settings. New exports always use the unified format; older installed versions cannot read that format. Upgrade both scripts before exchanging unified backups.
+Both scripts also read version 1 `bluesky-content-manager-settings` (nested `settings`) and `reddit-advanced-content-filter-settings` / `reddit-advanced-content-filter-ai-settings` (top-level lists). Cross-platform legacy import transfers shared lists and AI prompts and retains the source platform's supported options. Same-platform legacy import applies its supported settings. New exports always use the unified format; older installed versions cannot read that format. Upgrade both scripts before exchanging unified backups.
 
 | Limit | Definition |
 | --- | --- |
@@ -70,3 +70,7 @@ A separate code review identified a Greek final-sigma candidate-filter mismatch 
 ## AI topic description compatibility
 
 AI descriptions no longer have a combined 3,000-character cap. Both platforms retain up to 20 topics of 1,000 characters each without truncation during import, editing, storage validation, and export. Longer descriptions increase AI request input size; existing budgets and request caps still apply. Regression tests cover 20 distinct maximum-length descriptions and enforce the remaining per-topic/count limits.
+
+## Shared AI prompts
+
+The canonical prompt list is `shared.aiTopics`. Exports write it once and omit `topics` from platform AI controls. Upgrade both scripts to Bluesky 4.05 / Reddit 4.04 or later before transferring these backups. Existing platform-specific prompt arrays remain readable: when `shared.aiTopics` is absent, their prompts are combined in Bluesky-then-Reddit order and deduplicated. More than 20 distinct prompts fails validation without changing the draft. Explicit shared prompts take precedence. Enabled state, mode, image analysis, scope, budget and request limit remain separate per platform. Sharing uses export/import; it is not automatic synchronization.

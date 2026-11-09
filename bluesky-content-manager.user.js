@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bluesky Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.04
+// @version      4.05
 // @description  Filter Bluesky by meaning with optional OpenRouter AI topics, preview and reveal controls, plus keyword, account, allowlist, and alt-text filters.
 // @author       Stuart Saddler
 // @license      MIT
@@ -163,7 +163,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                 backupFields(ai, ['enabled', 'mode', 'scope', 'analyzeImages', 'topics', 'budget', 'requestLimit'], platform + ' AI settings');
                 if ((platform === 'reddit' && ai.scope !== 'all') || (platform === 'bluesky' && ['news', 'all'].indexOf(ai.scope) === -1)) throw new Error(platform + ' AI scope is invalid.');
                 // Validate with the local schema, then retain the other platform's scope.
-                copy.ai = validateAI(Object.assign({}, ai, { scope: 'all' }));
+                copy.ai = validateAI(Object.assign({ topics: [] }, ai, { scope: 'all' }));
                 copy.ai.scope = ai.scope;
             }
             result[platform] = copy;
@@ -174,6 +174,25 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         const result = preservePlatformSettings(current), next = preservePlatformSettings(incoming);
         for (const platform of Object.keys(next)) result[platform] = Object.assign({}, result[platform] || {}, next[platform]);
         return result;
+    }
+    function sharedAITopics(shared, platforms) {
+        let topics;
+        if (Object.prototype.hasOwnProperty.call(shared, 'aiTopics')) topics = shared.aiTopics;
+        else {
+            for (const platform of ['bluesky', 'reddit']) {
+                if (platforms[platform] && platforms[platform].ai) {
+                    if (!topics) topics = [];
+                    topics = topics.concat(platforms[platform].ai.topics);
+                }
+            }
+            if (topics) topics = [...new Set(topics)];
+        }
+        if (topics === undefined) return undefined;
+        if (!Array.isArray(topics) || topics.some(topic => typeof topic !== 'string' || topic.length > MAX_AI_TOPIC_LENGTH))
+            throw new Error('Shared AI prompts must be text entries of at most 1,000 characters each.');
+        topics = [...new Set(topics.map(topic => topic.trim()).filter(Boolean))];
+        if (topics.length > 20) throw new Error('Shared AI prompts must contain at most 20 topics. Combine the older platform-specific topics before importing.');
+        return topics;
     }
     function parseBackup(text) {
         if (new TextEncoder().encode(text).length > BACKUP_FILE_BYTES) throw new Error('Settings files must be at most 10 MiB.');
@@ -200,10 +219,17 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             platforms.reddit = {};
             if (Object.prototype.hasOwnProperty.call(value, 'ai')) platforms.reddit.ai = value.ai;
         } else throw new Error('Unsupported backup format. Choose a unified, Bluesky, or Reddit settings backup.');
-        return { shared, platforms: preservePlatformSettings(platforms), source };
+        platforms = preservePlatformSettings(platforms);
+        const topics = sharedAITopics(value.format === 'unified-content-filter-backup' ? value.shared : {}, platforms);
+        if (topics !== undefined) shared.aiTopics = topics;
+        return { shared, platforms, source };
     }
     function createUnifiedBackup(shared, platforms) {
         const value = { format: 'unified-content-filter-backup', version: 1, exportedAt: new Date().toISOString(), shared: validateSharedFilters(shared.blocklist, shared.allowlist), platforms: preservePlatformSettings(platforms) };
+        value.shared.aiTopics = sharedAITopics(shared, value.platforms) || [];
+        for (const platform of Object.keys(value.platforms)) {
+            if (value.platforms[platform].ai) delete value.platforms[platform].ai.topics;
+        }
         if (new TextEncoder().encode(JSON.stringify(value)).length > BACKUP_FILE_BYTES) throw new Error('The JSON backup exceeds 10 MiB. Shorten the lists before exporting.');
         return value;
     }
@@ -284,7 +310,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     function exportBackup(value) {
         const platforms = preservePlatformSettings(value.backupPlatforms);
         platforms.bluesky = { ai: value.ai, autoWhitelistEnabled: value.autoWhitelistEnabled, altTextEnforcementEnabled: value.altTextEnforcementEnabled };
-        return createUnifiedBackup({ blocklist: value.filteredTerms, allowlist: value.manualWhitelistTerms }, platforms);
+        return createUnifiedBackup({ blocklist: value.filteredTerms, allowlist: value.manualWhitelistTerms, aiTopics: value.ai.topics }, platforms);
     }
     function validateSettings(value) {
         if (!value || typeof value !== 'object' || typeof value.autoWhitelistEnabled !== 'boolean' || typeof value.altTextEnforcementEnabled !== 'boolean')
@@ -1355,9 +1381,10 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                 if (options.altTextEnforcementEnabled !== undefined) find('bcm-alt').checked = options.altTextEnforcementEnabled;
                 if (options.autoWhitelistEnabled !== undefined) find('bcm-follows').checked = options.autoWhitelistEnabled;
                 if (options.ai) applyAIDraft(dialog, options.ai);
+                if (backup.shared.aiTopics !== undefined) find('bcm-ai-topics').value = backup.shared.aiTopics.join('\n');
                 draftPlatforms = platforms;
                 loaded = dirty = true;
-                status(backup.shared.blocklist.length.toLocaleString() + ' blocked and ' + backup.shared.allowlist.length.toLocaleString() + ' allowed entries loaded. ' + (backup.source && backup.source !== 'bluesky' ? 'Only shared lists apply here; other-platform preferences are retained for export. ' : '') + 'Review, then choose Save changes.');
+                status(backup.shared.blocklist.length.toLocaleString() + ' blocked and ' + backup.shared.allowlist.length.toLocaleString() + ' allowed entries loaded. ' + (backup.source && backup.source !== 'bluesky' ? 'Shared lists and AI prompts apply here; other-platform controls are retained for export. ' : '') + 'Review, then choose Save changes.');
             }
             catch (error) {
                 status(`Import failed. ${error.message} Your lists were kept.`, true);

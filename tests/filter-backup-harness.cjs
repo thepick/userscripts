@@ -5,6 +5,7 @@ function load(platform, values={}) {
   let source = fs.readFileSync(path.join(__dirname,'..',files[platform]),'utf8');
   source = source.replace(/^\s*main\(\);\s*$/m, `Object.assign(globalThis, {
     editor: typeof createPagedEditor === 'function' ? createPagedEditor : undefined,
+    exportCurrent: exportBackup,
     parse: typeof parseBackup === 'function' ? parseBackup : undefined,
     create: typeof createUnifiedBackup === 'function' ? createUnifiedBackup : undefined,
     shared: typeof validateSharedFilters === 'function' ? validateSharedFilters : undefined,

@@ -29,7 +29,7 @@ The initial imports preserved the Greasy Fork downloads exactly, including their
 
 ## Shared filter backups
 
-Bluesky 4.03 and Reddit 4.02 support one shared blocklist/allowlist backup with separate platform settings. See the [format, compatibility, limits, and validation results](docs/unified-filter-backup.md). The 100,000-entry ceiling remains provisional while editor performance is evaluated.
+Bluesky 4.05 and Reddit 4.04 support one shared blocklist, allowlist, and AI-prompt backup with separate platform settings. See the [format, compatibility, limits, and validation results](docs/unified-filter-backup.md). The 100,000-entry ceiling remains provisional while editor performance is evaluated.
 
 ## AI filtering
 
