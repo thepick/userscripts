@@ -6,6 +6,7 @@ const results=document.querySelector('#results');results.textContent='';
 function log(s){results.textContent+=s+'\n';}
 function check(ok,message){if(!ok)throw Error(message);}
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const painted=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
 async function until(predicate){for(let i=0;i<100;i++){if(predicate())return;await pause(20);}throw Error('Timed out waiting for UI operation');}
 const ai={enabled:false,mode:'hide',scope:'all',analyzeImages:true,topics:['Sports except MMA'],budget:.3,requestLimit:123};
 const backup=(blocklist=['blockword'],platforms={})=>({format:'unified-content-filter-backup',version:1,shared:{blocklist,allowlist:['science']},platforms});
@@ -25,7 +26,7 @@ async function frame(platform,initial){
  return {w,d,values,element,prefix:platform==='bluesky'?'bcm':'raf',get writes(){return writes;},get exported(){return exported;},confirm:value=>confirm=value,corrupt:value=>corrupt=value};
 }
 function input(f,name){return f.d.querySelector('#'+f.prefix+'-'+name);}
-async function importFile(f,value){const file=input(f,'import-file'),data=new f.w.DataTransfer();data.items.add(new f.w.File([typeof value==='string'?value:JSON.stringify(value)],'backup.json',{type:'application/json'}));file.files=data.files;file.dispatchEvent(new f.w.Event('change'));await until(()=>!file.disabled);await pause(20);}
+async function importFile(f,value){const file=input(f,'import-file'),data=new f.w.DataTransfer();data.items.add(new f.w.File([typeof value==='string'?value:JSON.stringify(value)],'backup.json',{type:'application/json'}));file.files=data.files;file.dispatchEvent(new f.w.Event('change'));await until(()=>!file.disabled);await painted();}
 async function save(f){input(f,'save').click();await until(()=>!input(f,'save')||!input(f,'save').disabled);await pause(30);}
 async function run(platform){
  const f=await frame(platform);const block=input(f,'blocklist'),allow=input(f,platform==='bluesky'?'allowlist':'whitelist')||input(f,'allowlist');
@@ -50,17 +51,37 @@ async function run(platform){
 }
 async function large(platform,count){
  const f=await frame(platform);const terms=Array.from({length:count},(_,i)=>'keyword'+i);terms[count-1]='blockword';
- const started=performance.now();await importFile(f,backup(terms));const importMs=performance.now()-started;
+ const value=backup(terms);value.shared.allowlist=Array.from({length:count},(_,i)=>'allowword'+i);value.shared.allowlist[count-1]='science';
+ const started=performance.now();await importFile(f,value);const importMs=performance.now()-started;
  const saveStart=performance.now();await save(f);const saveMs=performance.now()-saveStart;
  check(!f.d.querySelector('dialog'),'large save closes dialog');
- f.w.testAPI.open();input(f,'export').click();const exported=JSON.parse(await f.exported.text());check(exported.shared.blocklist.length===count,'large export retains every entry');
- f.d.querySelector('dialog').close();await pause(20);
+ f.w.testAPI.open();input(f,'export').click();const exported=JSON.parse(await f.exported.text());check(exported.shared.blocklist.length===count&&exported.shared.allowlist.length===count,'large export retains both complete lists');
+ if(count>1000){
+  const editor=input(f,'blocklist'),search=input(f,platform==='bluesky'?'block-find':'block-search');
+  check(editor.value.split('\n').length<=1000,'rendered page is bounded');
+  const pages=input(f,'blocklist-pages');check(pages.getBoundingClientRect().bottom<=search.getBoundingClientRect().top,'page controls do not overlap Find');
+  search.value='blockword';search.dispatchEvent(new f.w.Event('input'));input(f,'block-next').click();
+  check(editor.value.slice(editor.selectionStart,editor.selectionEnd)==='blockword','Find reaches last page');
+  const editStart=performance.now();editor.value=editor.value.replace('keyword'+(count-2),'edited-last-page');editor.dispatchEvent(new f.w.Event('input',{bubbles:true}));await painted();
+  check(performance.now()-editStart<1000,'editing last page remains responsive');
+  input(f,'blocklist-previous-page').click();input(f,'export').click();const edited=JSON.parse(await f.exported.text());check(edited.shared.blocklist.includes('edited-last-page')&&edited.shared.blocklist[0]==='keyword0','edits retain other pages');
+ }
+ await save(f);check(!f.d.querySelector('dialog'),'edited pages save successfully');await pause(20);
  const feed=f.d.querySelector('#feed');const append=offset=>{for(let i=offset;i<offset+30;i++){const post=f.d.createElement(platform==='bluesky'?'article':'shreddit-post');post.setAttribute('data-testid','post');post.setAttribute('post-title',i%2?'science blockword':'blockword');post.setAttribute('id','t3_post'+i);post.innerHTML='<h2>'+(i%2?'science blockword':'blockword')+'</h2><a href="https://'+(platform==='bluesky'?'bsky.app/profile/test/post/':'www.reddit.com/comments/')+'post'+i+'/">post</a>';feed.append(post);}};
  f.w.testAPI.observe();append(0);f.w.testAPI.collect();await pause(250);append(30);f.w.testAPI.collect();await pause(250);
  check(feed.children.length===60,'new feed cards remain in DOM after repeated appends');
  const hidden=feed.querySelectorAll('.'+f.prefix+'-filtered').length;check(hidden>0,'new feed cards actually filtered');check(hidden<60,'allowlisted cards remain visible');
- const stored=Array.from(f.values);f.element.remove();const reopened=await frame(platform,stored);check(input(reopened,'blocklist').value.split('\n').length===count,'fresh script reload preserves all entries');reopened.element.remove();
+ const stored=Array.from(f.values);f.element.remove();const reopened=await frame(platform,stored);input(reopened,'export').click();const restored=JSON.parse(await reopened.exported.text());check(restored.shared.blocklist.length===count&&restored.shared.allowlist.length===count,'fresh script reload preserves both complete lists');if(count>1000)check(restored.shared.blocklist.includes('edited-last-page'),'edited last page survives Save and reload');reopened.element.remove();
+ check(importMs<5000,'large import must display within 5 seconds; measured '+importMs.toFixed(1)+' ms');
  log('PASS '+platform+' '+count+': import '+importMs.toFixed(1)+' ms; save '+saveMs.toFixed(1)+' ms; export/reload, appended feed batches, allowlist priority');
 }
-(async()=>{try{if(location.hash){await large('bluesky',100000);}else{for(const p of ['bluesky','reddit'])await run(p);for(const p of ['bluesky','reddit'])for(const n of [1000,10000,50000,100000])await large(p,n);}log('ALL BROWSER TESTS PASSED');document.title='PASS — Unified filter backup browser tests';}catch(e){log('FAIL '+e.stack);document.title='FAIL — Unified filter backup browser tests';}})();
+async function longEntries(platform){
+ const f=await frame(platform),values=Array.from({length:800},(_,i)=>String(i).padStart(4,'0')+'x'.repeat(9996));const value=backup(values.slice(0,400));value.shared.allowlist=values.slice(400);
+ const start=performance.now();await importFile(f,value);const ms=performance.now()-start;
+ check(input(f,'blocklist').value.length<=65536,'long-entry rendering is bounded');
+ input(f,'export').click();const result=JSON.parse(await f.exported.text());check(JSON.stringify(result.shared)===JSON.stringify(value.shared),'near-8MiB export preserves exact data');
+ await save(f);check(!f.d.querySelector('dialog'),'near-8MiB save succeeds');f.element.remove();
+ check(ms<5000,'near-8MiB import under five seconds');log('PASS '+platform+' near-8MiB/10k-character entries: import '+ms.toFixed(1)+' ms');
+}
+(async()=>{try{if(location.hash){await large(location.hash.includes('reddit')?'reddit':'bluesky',100000);}else{for(const p of ['bluesky','reddit'])await run(p);for(const p of ['bluesky','reddit'])for(const n of [1000,10000,50000,100000])await large(p,n);for(const p of ['bluesky','reddit'])await longEntries(p);}log('ALL BROWSER TESTS PASSED');document.title='PASS — Unified filter backup browser tests';}catch(e){log('FAIL '+e.stack);document.title='FAIL — Unified filter backup browser tests';}})();
 </script>

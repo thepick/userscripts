@@ -4,6 +4,7 @@ const files = {bluesky:'bluesky-content-manager.user.js',reddit:'reddit-advanced
 function load(platform, values={}) {
   let source = fs.readFileSync(path.join(__dirname,'..',files[platform]),'utf8');
   source = source.replace(/^\s*main\(\);\s*$/m, `Object.assign(globalThis, {
+    editor: typeof createPagedEditor === 'function' ? createPagedEditor : undefined,
     parse: typeof parseBackup === 'function' ? parseBackup : undefined,
     create: typeof createUnifiedBackup === 'function' ? createUnifiedBackup : undefined,
     shared: typeof validateSharedFilters === 'function' ? validateSharedFilters : undefined,
@@ -15,7 +16,7 @@ function load(platform, values={}) {
   });`);
   const storage = new Map(Object.entries(values));
   const c = {console,URL,Blob,TextEncoder,crypto:webcrypto,performance,Date,setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,
-    window:{},document:{},location:{hostname:platform==='bluesky'?'bsky.app':'www.reddit.com'},
+    getComputedStyle:()=>({lineHeight:"20px"}),window:{},document:{},location:{hostname:platform==='bluesky'?'bsky.app':'www.reddit.com'},
     GM:{getValue:(k,d)=>Promise.resolve(storage.has(k)?storage.get(k):d)},
     GM_addStyle(){},GM_getValue:(k,d)=>storage.has(k)?storage.get(k):d,GM_setValue:(k,v)=>storage.set(k,v)};
   vm.createContext(c); vm.runInContext(source,c); return c;

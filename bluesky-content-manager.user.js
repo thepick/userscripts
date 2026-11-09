@@ -98,11 +98,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 .bcm-dialog summary{padding:4px 0;cursor:pointer}.bcm-dialog details[open] summary{margin-bottom:8px}
 .bcm-history-tabs{margin:10px 0 14px}.bcm-dialog .bcm-history-tabs button[aria-selected="true"]{color:var(--bcm-accent);background:var(--bcm-info);border-color:var(--bcm-accent)}
 .bcm-history{list-style:none;padding:0;margin:10px 0}.bcm-history li{border-bottom:1px solid var(--bcm-line);padding:10px 0;overflow-wrap:anywhere}.bcm-history p{margin:4px 0}.bcm-pager{justify-content:space-between}
+.bcm-editor-pages{margin-top:8px}.bcm-editor-pages span{flex-basis:100%;order:-1}
 .bcm-notice{position:fixed;bottom:16px;right:16px;z-index:1000000;max-width:min(380px,calc(100% - 32px));padding:12px 16px;border:1px solid #8ba3b5;border-radius:8px;background:#172b3a;color:white;font:14px/1.4 system-ui,sans-serif;cursor:pointer}
 @supports (grid-template-rows:subgrid){
     @media (width > 560px){
         #bcm-panel-filters .bcm-editors{row-gap:0}
-        #bcm-panel-filters .bcm-editor{display:grid;grid-template-rows:subgrid;grid-row:span 4}
+        #bcm-panel-filters .bcm-editor{display:grid;grid-template-rows:subgrid;grid-row:span 5}
     }
 }
 @media(max-width:560px){.bcm-editors{grid-template-columns:1fr}.bcm-head,.bcm-actions,.bcm-body{padding:13px 15px}.bcm-actions{flex-wrap:wrap}.bcm-actions .bcm-row{margin-left:auto}.bcm-nav{padding-inline:5px}}
@@ -207,6 +208,77 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         return value;
     }
     // End Unified Filter Backup v1.
+
+    // Keep native textarea layout bounded while retaining the complete unsaved draft.
+    function createPagedEditor(editor, previous, next, label, bar) {
+        let pages = [''], page = 0;
+        const offset = () => pages.slice(0, page).reduce((sum, text) => sum + text.length + 1, 0);
+        const getText = () => { pages[page] = editor.value; return pages.join('\n'); };
+        function refresh() {
+            bar.hidden = pages.length === 1;
+            label.textContent = 'Page ' + (page + 1) + ' of ' + pages.length + '. Edits affect this page; Find, Save and Export use all pages.';
+            previous.disabled = editor.disabled || page === 0;
+            next.disabled = editor.disabled || page === pages.length - 1;
+        }
+        function show(start = 0, end = start) {
+            editor.value = pages[page];
+            editor.setSelectionRange(start, end);
+            editor.scrollTop = 0;
+            refresh();
+        }
+        function setText(text, caret = 0) {
+            pages = []; let lines = [], size = 0;
+            for (const line of text.split('\n')) {
+                if (lines.length && (lines.length >= 1000 || size + line.length + 1 > 65536)) {
+                    pages.push(lines.join('\n')); lines = []; size = 0;
+                }
+                lines.push(line); size += line.length + 1;
+            }
+            pages.push(lines.join('\n')); page = 0;
+            while (page < pages.length - 1 && caret > pages[page].length) { caret -= pages[page].length + 1; page++; }
+            show(caret);
+        }
+        function capture(event) {
+            if (event && event.isComposing) return;
+            if (editor.value.length > 65536 || editor.value.split('\n').length > 1000) {
+                const caret = offset() + editor.selectionEnd;
+                setText(getText(), caret);
+            } else { pages[page] = editor.value; refresh(); }
+        }
+        editor.addEventListener('input', capture);
+        editor.addEventListener('compositionend', capture);
+        previous.addEventListener('click', () => { getText(); page = Math.max(0, page - 1); show(); editor.focus(); });
+        next.addEventListener('click', () => { getText(); page = Math.min(pages.length - 1, page + 1); show(); editor.focus(); });
+        function findNext(query) {
+            const raw = getText(), text = raw.toLowerCase();
+            const start = raw.slice(0, offset() + editor.selectionEnd).toLowerCase().length;
+            query = query.toLowerCase();
+            if (!query) return;
+            let index = text.indexOf(query, start);
+            if (index < 0) index = text.indexOf(query);
+            if (index < 0) return;
+            let end = index + query.length;
+            if (raw.length !== text.length) {
+                let original = 0, folded = 0, mappedStart = 0, mappedEnd = 0;
+                for (const character of raw) {
+                    const nextFolded = folded + character.toLowerCase().length;
+                    if (folded <= index && index < nextFolded) mappedStart = original;
+                    original += character.length;
+                    if (folded < end && end <= nextFolded) { mappedEnd = original; break; }
+                    folded = nextFolded;
+                }
+                index = mappedStart; end = mappedEnd;
+            }
+            const length = end - index;
+            page = 0;
+            while (page < pages.length - 1 && index > pages[page].length) { index -= pages[page].length + 1; page++; }
+            show(index, index + length); editor.focus();
+            editor.scrollTop = editor.value.slice(0, index).split('\n').length * parseFloat(getComputedStyle(editor).lineHeight);
+        }
+        return { getText, setText, findNext, refresh };
+    }
+
+
 
     function normalizeTerms(values) { return normalizeFilterList(values, 'Filter list'); }
     function exportBackup(value) {
@@ -986,13 +1058,15 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                             <div class="bcm-editor">
                                 <div class="bcm-field-title"><label for="bcm-blocklist">Blocklist</label><span class="bcm-help" id="bcm-block-count" aria-live="polite"></span></div>
                                 <p class="bcm-help" id="bcm-block-help">One keyword or phrase per line.</p>
-                                <textarea id="bcm-blocklist" data-bcm-draft spellcheck="false" aria-describedby="bcm-block-help bcm-block-count"></textarea>
+                                <textarea id="bcm-blocklist" data-bcm-draft spellcheck="false" aria-describedby="bcm-block-help bcm-block-count bcm-blocklist-page"></textarea>
+                                <div id="bcm-blocklist-pages" class="bcm-pager bcm-editor-pages" hidden><button id="bcm-blocklist-previous-page" type="button" aria-label="Previous page of blocklist">Previous page</button><span id="bcm-blocklist-page" class="bcm-help" role="status"></span><button id="bcm-blocklist-next-page" type="button" aria-label="Next page of blocklist">Next page</button></div>
                                 <div class="bcm-find"><input type="search" id="bcm-block-find" aria-label="Find in blocklist" placeholder="Find in blocklist"><button type="button" id="bcm-block-next">Next match</button></div>
                             </div>
                             <div class="bcm-editor">
                                 <div class="bcm-field-title"><label for="bcm-allowlist">Allowlist</label><span class="bcm-help" id="bcm-allow-count" aria-live="polite"></span></div>
                                 <p class="bcm-help" id="bcm-allow-help">One @handle or content term per line. Overrides blocking rules.</p>
-                                <textarea id="bcm-allowlist" data-bcm-draft spellcheck="false" aria-describedby="bcm-allow-help bcm-allow-count"></textarea>
+                                <textarea id="bcm-allowlist" data-bcm-draft spellcheck="false" aria-describedby="bcm-allow-help bcm-allow-count bcm-allowlist-page"></textarea>
+                                <div id="bcm-allowlist-pages" class="bcm-pager bcm-editor-pages" hidden><button id="bcm-allowlist-previous-page" type="button" aria-label="Previous page of allowlist">Previous page</button><span id="bcm-allowlist-page" class="bcm-help" role="status"></span><button id="bcm-allowlist-next-page" type="button" aria-label="Next page of allowlist">Next page</button></div>
                                 <div class="bcm-find"><input type="search" id="bcm-allow-find" aria-label="Find in allowlist" placeholder="Find in allowlist"><button type="button" id="bcm-allow-next">Next match</button></div>
                             </div>
                         </div>
@@ -1097,11 +1171,13 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                 details.open = true;
             field.focus();
         }
-        find('bcm-blocklist').value = filteredTerms.join('\n');
-        find('bcm-allowlist').value = manualWhitelistTerms.join('\n');
+        const blockEditor = createPagedEditor(find('bcm-blocklist'), find('bcm-blocklist-previous-page'), find('bcm-blocklist-next-page'), find('bcm-blocklist-page'), find('bcm-blocklist-pages'));
+        const allowEditor = createPagedEditor(find('bcm-allowlist'), find('bcm-allowlist-previous-page'), find('bcm-allowlist-next-page'), find('bcm-allowlist-page'), find('bcm-allowlist-pages'));
+        blockEditor.setText(filteredTerms.join('\n'));
+        allowEditor.setText(manualWhitelistTerms.join('\n'));
         find('bcm-alt').checked = altTextEnforcementEnabled;
         find('bcm-follows').checked = autoWhitelistEnabled;
-        const draft = () => validateSettings({ filteredTerms: find('bcm-blocklist').value.split('\n'), manualWhitelistTerms: find('bcm-allowlist').value.split('\n'), altTextEnforcementEnabled: find('bcm-alt').checked, autoWhitelistEnabled: find('bcm-follows').checked, ai: draftAI(), backupPlatforms: draftPlatforms });
+        const draft = () => validateSettings({ filteredTerms: blockEditor.getText().split('\n'), manualWhitelistTerms: allowEditor.getText().split('\n'), altTextEnforcementEnabled: find('bcm-alt').checked, autoWhitelistEnabled: find('bcm-follows').checked, ai: draftAI(), backupPlatforms: draftPlatforms });
         function status(message, error = false) { find('bcm-save-status').textContent = message; find('bcm-save-status').dataset.error = String(error); }
         updateDialogStatus = () => {
             if (!configDialog)
@@ -1145,10 +1221,10 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             find('bcm-history-prev').disabled = saving || page === 0;
             find('bcm-history-next').disabled = saving || page >= pages - 1;
         };
-        function setupEditor(prefix, textareaId) {
+        function setupEditor(prefix, textareaId, model) {
             const editor = find(textareaId), search = find(prefix + '-find'), next = find(prefix + '-next');
-            function update() { try {
-                const entries = normalizeTerms(editor.value.split('\n')), query = search.value.toLowerCase(), matches = query ? entries.filter(entry => entry.includes(query)).length : 0;
+            function update() { model.refresh(); try {
+                const entries = normalizeTerms(model.getText().split('\n')), query = search.value.toLowerCase(), matches = query ? entries.filter(entry => entry.includes(query)).length : 0;
                 find(prefix + '-count').textContent = `${entries.length.toLocaleString()} unique entries${query ? ` · ${matches.toLocaleString()} matching entries` : ''}`;
                 next.disabled = saving || !query || !matches;
             }
@@ -1157,16 +1233,11 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             } }
             editor.addEventListener('input', update);
             search.addEventListener('input', update);
-            next.addEventListener('click', () => { const text = editor.value.toLowerCase(), query = search.value.toLowerCase(); let index = text.indexOf(query, editor.selectionEnd); if (index < 0)
-                index = text.indexOf(query); if (index >= 0) {
-                editor.focus();
-                editor.setSelectionRange(index, index + query.length);
-                editor.scrollTop = (editor.value.slice(0, index).split('\n').length - 1) * parseFloat(getComputedStyle(editor).lineHeight);
-            } });
+            next.addEventListener('click', () => model.findNext(search.value));
             update();
             return update;
         }
-        const updateBlock = setupEditor('bcm-block', 'bcm-blocklist'), updateAllow = setupEditor('bcm-allow', 'bcm-allowlist');
+        const updateBlock = setupEditor('bcm-block', 'bcm-blocklist', blockEditor), updateAllow = setupEditor('bcm-allow', 'bcm-allowlist', allowEditor);
         function beginOperation(message) {
             if (saving || configDialog !== dialog)
                 return null;
@@ -1216,7 +1287,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             status('Unsaved changes.');
         } });
         const renderPreview = () => { try {
-            const text = find('bcm-preview').value, allow = regexMatchAny(text, normalizeTerms(find('bcm-allowlist').value.split('\n')).filter(term => !term.startsWith('@'))), block = regexMatchAny(text, normalizeTerms(find('bcm-blocklist').value.split('\n')));
+            if (!find('bcm-preview').value.trim()) { find('bcm-preview-result').hidden = true; return; }
+            const text = find('bcm-preview').value, allow = regexMatchAny(text, normalizeTerms(allowEditor.getText().split('\n')).filter(term => !term.startsWith('@'))), block = regexMatchAny(text, normalizeTerms(blockEditor.getText().split('\n')));
             const result = find('bcm-preview-result');
             result.hidden = !text.trim();
             result.dataset.blocked = String(!allow && Boolean(block));
@@ -1278,8 +1350,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                 const options = backup.platforms.bluesky || {};
                 const platforms = mergePlatformSettings(draftPlatforms, backup.platforms);
                 if (dirty && !window.confirm('Replace your unsaved draft with this backup?')) return;
-                find('bcm-blocklist').value = backup.shared.blocklist.join('\n');
-                find('bcm-allowlist').value = backup.shared.allowlist.join('\n');
+                blockEditor.setText(backup.shared.blocklist.join('\n'));
+                allowEditor.setText(backup.shared.allowlist.join('\n'));
                 if (options.altTextEnforcementEnabled !== undefined) find('bcm-alt').checked = options.altTextEnforcementEnabled;
                 if (options.autoWhitelistEnabled !== undefined) find('bcm-follows').checked = options.autoWhitelistEnabled;
                 if (options.ai) applyAIDraft(dialog, options.ai);

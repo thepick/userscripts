@@ -82,6 +82,7 @@
 .raf-dialog summary{padding:4px 0;cursor:pointer}.raf-dialog details[open] summary{margin-bottom:8px}
 .raf-history-tabs{margin:10px 0 14px}.raf-dialog .raf-history-tabs button[aria-selected="true"]{color:var(--raf-accent);background:var(--raf-info);border-color:var(--raf-accent)}
 .raf-history{list-style:none;padding:0;margin:10px 0}.raf-history li{border-bottom:1px solid var(--raf-line);padding:10px 0;overflow-wrap:anywhere}.raf-history p{margin:4px 0}.raf-pager{justify-content:space-between}
+.raf-editor-pages{margin-top:8px}.raf-editor-pages span{flex-basis:100%;order:-1}
 .raf-notice{position:fixed;bottom:16px;right:16px;z-index:1000000;max-width:min(380px,calc(100% - 32px));padding:12px 16px;border:1px solid #8ba3b5;border-radius:8px;background:#172b3a;color:white;font:14px/1.4 system-ui,sans-serif;cursor:pointer}
 @media(max-width:560px){.raf-editors{grid-template-columns:1fr}.raf-head,.raf-actions,.raf-body{padding:13px 15px}.raf-actions{flex-wrap:wrap}.raf-actions .raf-row{margin-left:auto}.raf-nav{padding-inline:5px}}
 @media(max-width:390px){.raf-nav{display:grid;grid-template-columns:1fr 1fr;gap:0}.raf-dialog .raf-nav button{text-align:left}}
@@ -198,6 +199,77 @@
         return value;
     }
     // End Unified Filter Backup v1.
+
+    // Keep native textarea layout bounded while retaining the complete unsaved draft.
+    function createPagedEditor(editor, previous, next, label, bar) {
+        let pages = [''], page = 0;
+        const offset = () => pages.slice(0, page).reduce((sum, text) => sum + text.length + 1, 0);
+        const getText = () => { pages[page] = editor.value; return pages.join('\n'); };
+        function refresh() {
+            bar.hidden = pages.length === 1;
+            label.textContent = 'Page ' + (page + 1) + ' of ' + pages.length + '. Edits affect this page; Find, Save and Export use all pages.';
+            previous.disabled = editor.disabled || page === 0;
+            next.disabled = editor.disabled || page === pages.length - 1;
+        }
+        function show(start = 0, end = start) {
+            editor.value = pages[page];
+            editor.setSelectionRange(start, end);
+            editor.scrollTop = 0;
+            refresh();
+        }
+        function setText(text, caret = 0) {
+            pages = []; let lines = [], size = 0;
+            for (const line of text.split('\n')) {
+                if (lines.length && (lines.length >= 1000 || size + line.length + 1 > 65536)) {
+                    pages.push(lines.join('\n')); lines = []; size = 0;
+                }
+                lines.push(line); size += line.length + 1;
+            }
+            pages.push(lines.join('\n')); page = 0;
+            while (page < pages.length - 1 && caret > pages[page].length) { caret -= pages[page].length + 1; page++; }
+            show(caret);
+        }
+        function capture(event) {
+            if (event && event.isComposing) return;
+            if (editor.value.length > 65536 || editor.value.split('\n').length > 1000) {
+                const caret = offset() + editor.selectionEnd;
+                setText(getText(), caret);
+            } else { pages[page] = editor.value; refresh(); }
+        }
+        editor.addEventListener('input', capture);
+        editor.addEventListener('compositionend', capture);
+        previous.addEventListener('click', () => { getText(); page = Math.max(0, page - 1); show(); editor.focus(); });
+        next.addEventListener('click', () => { getText(); page = Math.min(pages.length - 1, page + 1); show(); editor.focus(); });
+        function findNext(query) {
+            const raw = getText(), text = raw.toLowerCase();
+            const start = raw.slice(0, offset() + editor.selectionEnd).toLowerCase().length;
+            query = query.toLowerCase();
+            if (!query) return;
+            let index = text.indexOf(query, start);
+            if (index < 0) index = text.indexOf(query);
+            if (index < 0) return;
+            let end = index + query.length;
+            if (raw.length !== text.length) {
+                let original = 0, folded = 0, mappedStart = 0, mappedEnd = 0;
+                for (const character of raw) {
+                    const nextFolded = folded + character.toLowerCase().length;
+                    if (folded <= index && index < nextFolded) mappedStart = original;
+                    original += character.length;
+                    if (folded < end && end <= nextFolded) { mappedEnd = original; break; }
+                    folded = nextFolded;
+                }
+                index = mappedStart; end = mappedEnd;
+            }
+            const length = end - index;
+            page = 0;
+            while (page < pages.length - 1 && index > pages[page].length) { index -= pages[page].length + 1; page++; }
+            show(index, index + length); editor.focus();
+            editor.scrollTop = editor.value.slice(0, index).split('\n').length * parseFloat(getComputedStyle(editor).lineHeight);
+        }
+        return { getText, setText, findNext, refresh };
+    }
+
+
 
     function normalizeList(values) { return normalizeFilterList(values, 'Filter list'); }
     function exportBackup(value) {
@@ -757,13 +829,15 @@
                             <div class="raf-editor">
                                 <div class="raf-field-title"><label for="raf-blocklist">Blocklist</label><span class="raf-help" id="raf-block-count" aria-live="polite"></span></div>
                                 <p class="raf-help" id="raf-block-help">One keyword, phrase, or subreddit per line.</p>
-                                <textarea id="raf-blocklist" data-raf-draft spellcheck="false" aria-describedby="raf-block-help raf-block-count"></textarea>
+                                <textarea id="raf-blocklist" data-raf-draft spellcheck="false" aria-describedby="raf-block-help raf-block-count raf-blocklist-page"></textarea>
+                                <div id="raf-blocklist-pages" class="raf-pager raf-editor-pages" hidden><button id="raf-blocklist-previous-page" type="button" aria-label="Previous page of blocklist">Previous page</button><span id="raf-blocklist-page" class="raf-help" role="status"></span><button id="raf-blocklist-next-page" type="button" aria-label="Next page of blocklist">Next page</button></div>
                                 <div class="raf-find"><input type="search" id="raf-block-search" aria-label="Find in blocklist" placeholder="Find in blocklist"><button type="button" id="raf-block-next">Next match</button></div>
                             </div>
                             <div class="raf-editor">
                                 <div class="raf-field-title"><label for="raf-whitelist">Whitelist</label><span class="raf-help" id="raf-white-count" aria-live="polite"></span></div>
                                 <p class="raf-help" id="raf-white-help">One entry per line. Overrides blocking rules.</p>
-                                <textarea id="raf-whitelist" data-raf-draft spellcheck="false" aria-describedby="raf-white-help raf-white-count"></textarea>
+                                <textarea id="raf-whitelist" data-raf-draft spellcheck="false" aria-describedby="raf-white-help raf-white-count raf-whitelist-page"></textarea>
+                                <div id="raf-whitelist-pages" class="raf-find" hidden><button id="raf-whitelist-previous-page" type="button" aria-label="Previous page of whitelist">Previous page</button><span id="raf-whitelist-page" class="raf-help" role="status"></span><button id="raf-whitelist-next-page" type="button" aria-label="Next page of whitelist">Next page</button></div>
                                 <div class="raf-find"><input type="search" id="raf-white-search" aria-label="Find in whitelist" placeholder="Find in whitelist"><button type="button" id="raf-white-next">Next match</button></div>
                             </div>
                         </div>
@@ -810,7 +884,9 @@
                 </footer>
             </div>`;
         const find = id => dialog.querySelector('#' + id), blockInput = find('raf-blocklist'), whiteInput = find('raf-whitelist');
-        blockInput.value = blocklistArr.join('\n'); whiteInput.value = whitelistArr.join('\n');
+        const blockEditor = createPagedEditor(find('raf-blocklist'), find('raf-blocklist-previous-page'), find('raf-blocklist-next-page'), find('raf-blocklist-page'), find('raf-blocklist-pages'));
+        const allowEditor = createPagedEditor(find('raf-whitelist'), find('raf-whitelist-previous-page'), find('raf-whitelist-next-page'), find('raf-whitelist-page'), find('raf-whitelist-pages'));
+        blockEditor.setText(blocklistArr.join('\n')); allowEditor.setText(whitelistArr.join('\n'));
         let baseRevision = settingsRevision, page = 0, saving = false, dirty = false, previewTimer = null;
         let draftPlatforms = preservePlatformSettings(settings.backupPlatforms);
         let previewSignature = '', previewBlock = [], previewWhite = [];
@@ -818,7 +894,7 @@
         const selectTab = setupTabs(find('raf-settings-tabs'), () => { body.scrollTop = 0; });
         setupTabs(find('raf-history-tabs'));
         const draftAI = mountAISettings(dialog, beginOperation, endOperation, status);
-        const draft = () => validateConfig({ blocklist: blockInput.value.split('\n'), whitelist: whiteInput.value.split('\n'), ai:draftAI(), backupPlatforms:draftPlatforms });
+        const draft = () => validateConfig({ blocklist: blockEditor.getText().split('\n'), whitelist: allowEditor.getText().split('\n'), ai:draftAI(), backupPlatforms:draftPlatforms });
         function status(message, error = false) { find('raf-save-status').textContent = message; find('raf-save-status').dataset.error = String(error); }
 
         function setupTabs(tabList, onChange) {
@@ -898,11 +974,11 @@
             const result = find('raf-preview-result');
             result.hidden = !text.trim();
             if (result.hidden) return;
-            const signature = JSON.stringify([blockInput.value, whiteInput.value]);
+            const signature = JSON.stringify([blockEditor.getText(), allowEditor.getText()]);
             try {
                 if (signature !== previewSignature) {
-                    previewBlock = compileRules(normalizeList(blockInput.value.split('\n')));
-                    previewWhite = compileRules(normalizeList(whiteInput.value.split('\n')));
+                    previewBlock = compileRules(normalizeList(blockEditor.getText().split('\n')));
+                    previewWhite = compileRules(normalizeList(allowEditor.getText().split('\n')));
                     previewSignature = signature;
                 }
                 const white = matchBlock(text, previewWhite), block = matchBlock(text, previewBlock);
@@ -916,25 +992,22 @@
             }
         }
 
-        function setupEditor(prefix, editor) {
+        function setupEditor(prefix, editor, model) {
             const search = find(prefix + '-search'), next = find(prefix + '-next');
             const update = () => {
+                model.refresh();
                 try {
-                    const entries = normalizeList(editor.value.split('\n')), query = search.value.toLowerCase(), count = query ? entries.filter(entry => entry.includes(query)).length : 0;
+                    const entries = normalizeList(model.getText().split('\n')), query = search.value.toLowerCase(), count = query ? entries.filter(entry => entry.includes(query)).length : 0;
                     find(prefix + '-count').textContent = 'Unique entries: ' + entries.length.toLocaleString() + (query ? ' · Matching entries: ' + count.toLocaleString() : '');
                     next.disabled = saving || !query || !count;
                 } catch (error) { status(error.message, true); }
             };
             editor.addEventListener('input', () => { update(); clearTimeout(previewTimer); previewTimer = setTimeout(renderPreview, 100); });
             search.addEventListener('input', update);
-            next.addEventListener('click', () => {
-                const query = search.value.toLowerCase(), text = editor.value.toLowerCase();
-                let index = text.indexOf(query, editor.selectionEnd); if (index < 0) index = text.indexOf(query);
-                if (index >= 0) { editor.focus(); editor.setSelectionRange(index, index + query.length); editor.scrollTop = (editor.value.slice(0, index).split('\n').length - 1) * parseFloat(getComputedStyle(editor).lineHeight); }
-            });
+            next.addEventListener('click', () => model.findNext(search.value));
             update(); return update;
         }
-        const updateBlock = setupEditor('raf-block', blockInput), updateWhite = setupEditor('raf-white', whiteInput);
+        const updateBlock = setupEditor('raf-block', blockInput, blockEditor), updateWhite = setupEditor('raf-white', whiteInput, allowEditor);
         function beginOperation(message) {
             if (saving || dialogElement !== dialog) return null;
             saving = true;
@@ -1005,7 +1078,7 @@
                 const options = backup.platforms.reddit || {};
                 const platforms = mergePlatformSettings(draftPlatforms, backup.platforms);
                 if (dirty && !window.confirm('Replace your unsaved draft with this backup?')) return;
-                blockInput.value = backup.shared.blocklist.join('\n'); whiteInput.value = backup.shared.allowlist.join('\n');
+                blockEditor.setText(backup.shared.blocklist.join('\n')); allowEditor.setText(backup.shared.allowlist.join('\n'));
                 if (options.ai) applyAIDraft(dialog, options.ai);
                 draftPlatforms = platforms;
                 loaded = dirty = true;
