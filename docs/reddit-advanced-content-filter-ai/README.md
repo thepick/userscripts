@@ -1,8 +1,8 @@
-# Reddit Advanced Content Filter
+# Reddit Content Manager
 
 Use keyword and subreddit rules to filter Reddit. You can also enable AI topic filtering through OpenRouter and optionally include pictures. AI starts off. The script works on www.reddit.com and old.reddit.com.
 
-![Reddit Advanced Content Filter settings preview](https://raw.githubusercontent.com/thepick/userscripts/main/docs/reddit-advanced-content-filter-ai/reddit-filter-ai-settings-preview.png)
+![Reddit Content Manager settings preview](https://raw.githubusercontent.com/thepick/userscripts/main/docs/reddit-advanced-content-filter-ai/reddit-filter-ai-settings-preview.png)
 
 ## Quick start
 

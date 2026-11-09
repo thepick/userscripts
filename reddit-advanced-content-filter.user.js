@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Reddit Advanced Content Filter
+// @name         Reddit Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.05
+// @version      4.06
 // @description  Optional Liquid Ultra AI topic and picture filtering, with keyword/subreddit blocking, whitelist overrides, preview, history, and local backups.
 // @author       Stuart Saddler
 // @license      MIT
@@ -24,6 +24,8 @@
 // @grant        GM.addValueChangeListener
 // @grant        GM_registerMenuCommand
 // @grant        GM_unregisterMenuCommand
+// @downloadURL https://update.greasyfork.org/scripts/516666/Reddit%20Advanced%20Content%20Filter.user.js
+// @updateURL https://update.greasyfork.org/scripts/516666/Reddit%20Advanced%20Content%20Filter.meta.js
 // ==/UserScript==
 
 (function () {
@@ -840,7 +842,7 @@
         dialog.innerHTML = `
             <div class="raf-shell">
                 <header class="raf-head">
-                    <div><p>Reddit Advanced Content Filter</p><h2 id="raf-heading" tabindex="-1">Settings</h2></div>
+                    <div><p>Reddit Content Manager</p><h2 id="raf-heading" tabindex="-1">Settings</h2></div>
                 </header>
                 <div class="raf-nav" id="raf-settings-tabs" role="tablist" aria-label="Settings sections">
                     <button id="raf-tab-filters" data-raf-tab="filters" type="button" role="tab" aria-selected="true" aria-controls="raf-panel-filters">Filters</button>
@@ -1318,7 +1320,7 @@ const requestAI = runAsync(function* (job,key,ready=()=>true,prepared){
   const payload=prepared||(yield aiRequestPayload(job,ready));
   if(!ready())throw Object.assign(Error('The post changed before classification.'),{unsent:true,stale:true});
   return new Promise((resolve,reject)=>{
-  GM_xmlhttpRequest({method:'POST',url:'https://openrouter.ai/api/alpha/decisions',anonymous:true,timeout:20000,headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','X-Title':'Reddit Advanced Content Filter'},data:JSON.stringify(payload),onload(response){try{if(response.status===429)throw Object.assign(Error('OpenRouter is temporarily rate limited.'),{status:429,retryAfter:aiRetryAfter(response.responseHeaders)});if(response.status!==200)throw Error(response.status===401?'OpenRouter rejected the key. Save a valid key.':response.status===402?'OpenRouter credit limit reached. Check your account.':response.status===429?'OpenRouter rate limit reached. Retry in a minute.':`OpenRouter returned HTTP ${response.status}. Retry in a minute.`);const body=JSON.parse(response.responseText);if(body.error&&body.error.code===429)throw Object.assign(Error('OpenRouter is temporarily rate limited.'),{status:429,retryAfter:aiRetryAfter(response.responseHeaders)});resolve(body);}catch(error){reject(error);}},onerror:()=>reject(Error('OpenRouter could not be reached. Retry in a minute.')),ontimeout:()=>reject(Error('OpenRouter timed out. Retry in a minute.'))});
+  GM_xmlhttpRequest({method:'POST',url:'https://openrouter.ai/api/alpha/decisions',anonymous:true,timeout:20000,headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','X-Title':'Reddit Content Manager'},data:JSON.stringify(payload),onload(response){try{if(response.status===429)throw Object.assign(Error('OpenRouter is temporarily rate limited.'),{status:429,retryAfter:aiRetryAfter(response.responseHeaders)});if(response.status!==200)throw Error(response.status===401?'OpenRouter rejected the key. Save a valid key.':response.status===402?'OpenRouter credit limit reached. Check your account.':response.status===429?'OpenRouter rate limit reached. Retry in a minute.':`OpenRouter returned HTTP ${response.status}. Retry in a minute.`);const body=JSON.parse(response.responseText);if(body.error&&body.error.code===429)throw Object.assign(Error('OpenRouter is temporarily rate limited.'),{status:429,retryAfter:aiRetryAfter(response.responseHeaders)});resolve(body);}catch(error){reject(error);}},onerror:()=>reject(Error('OpenRouter could not be reached. Retry in a minute.')),ontimeout:()=>reject(Error('OpenRouter timed out. Retry in a minute.'))});
 });});
 const drainAI = runAsync(function* (){
   if(aiBusy||Date.now()<aiCooldown||document.hidden||(dialogElement&&dialogElement.open))return;aiBusy=true;

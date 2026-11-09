@@ -1,6 +1,6 @@
 # Unified Filter Backup v1
 
-Bluesky Content Manager 4.05 and Reddit Advanced Content Filter 4.04 export one file that either script can import. This is a manual transfer, not automatic synchronization. Export the current draft from **Backups & reset**, import it in the other script, review it, and choose **Save changes**. Importing alone does not change active filtering or saved settings. Replacing a modified draft requires confirmation.
+Bluesky Content Manager 4.05 and Reddit Content Manager 4.04 export one file that either script can import. This is a manual transfer, not automatic synchronization. Export the current draft from **Backups & reset**, import it in the other script, review it, and choose **Save changes**. Importing alone does not change active filtering or saved settings. Replacing a modified draft requires confirmation.
 
 ```json
 {
@@ -59,7 +59,7 @@ Large lists now use textarea pages of at most 1,000 lines or 65,536 UTF-16 code 
 
 Final automated checks pass: 122 Node tests, ES2015 parsing, both-platform browser runs at 1k/10k/50k/100k entries per list, and near-8MiB lists with 10k-character entries. The browser tests also save edits made on later pages, reload them, and check appended feed batches and allowlist priority. At 100k per list, displayed import took 528 ms on Bluesky and 462 ms on Reddit; initial Save took 384/779 ms. Near-8MiB imports took 256/552 ms. These are single-run work-PC measurements, including browser paint, not speed guarantees.
 
-Isolated validation copies installed in Violentmonkey 2.50.0 saved 100k entries in each list on both live sites (Reddit import 314 ms, Bluesky 742 ms). Both copies retained the lists after reload. Reddit hid 3 matching cards among 52 loaded cards. Full live infinite-scroll verification remains incomplete; connection timeouts interrupted those checks. The installed Bluesky inspection also exposed a subgrid overlap between page navigation and Find; the row span and wrapping were corrected, and a browser geometry assertion was added. The final layout rerun and browser heap-retention profiling are still outstanding. Keep the PR draft until the remaining release checks pass.
+Isolated validation copies installed in Violentmonkey 2.50.0 saved 100k entries in each list on both live sites (Reddit import 314 ms, Bluesky 742 ms). Both copies retained the lists after reload. Reddit hid 3 matching cards among 52 loaded cards. Full live infinite-scroll verification remains incomplete; connection timeouts interrupted those checks. The installed Bluesky inspection also exposed a subgrid overlap between page navigation and Find; the row span and wrapping were corrected, and a browser geometry assertion was added. The final layout rerun and browser heap-retention profiling are still outstanding. These validation gaps remain documented; the user authorized release after manual testing.
 
 ## Independent review
 

@@ -8,7 +8,7 @@ The initial imports preserved the Greasy Fork downloads exactly, including their
 
 | Script | Initial/imported version | Source | Greasy Fork |
 | --- | --- | --- | --- |
-| Reddit Advanced Content Filter | 3.1.0 | [Source](reddit-advanced-content-filter.user.js) / [Setup guide](docs/reddit-advanced-content-filter-ai/README.md) | [Listing](https://greasyfork.org/en/scripts/516666) |
+| Reddit Content Manager | 3.1.0 | [Source](reddit-advanced-content-filter.user.js) / [Setup guide](docs/reddit-advanced-content-filter-ai/README.md) | [Listing](https://greasyfork.org/en/scripts/516666) |
 | Remove Disable Adblock Nag Screen on 1mov.lol | 1.5 | [remove-disable-adblock-nag-screen.user.js](remove-disable-adblock-nag-screen.user.js) | [Listing](https://greasyfork.org/en/scripts/513207) |
 | Bluesky Content Manager | 3.5.2 | [Source](bluesky-content-manager.user.js) / [Setup guide](docs/bluesky-content-manager/README.md) | [Listing](https://greasyfork.org/en/scripts/518614) |
 | Bluesky Multi-Column | 1.7 | [bluesky-enhanced-layout.user.js](bluesky-enhanced-layout.user.js) | [Listing](https://greasyfork.org/en/scripts/520439-bluesky-multi-column) |
@@ -37,15 +37,15 @@ The Reddit and Bluesky AI filters use Liquid Ultra for topic filtering and Gemin
 
 When picture analysis is enabled, Gemini receives eligible pictures and returns descriptions; Liquid receives the post text and those descriptions, applies topic exceptions, and makes the final filtering decision. Gemini receives no original post text or user topics, and Liquid receives no image data. Both stages use the existing OpenRouter key and count toward the existing daily limits. The key must permit both models. Failed or incomplete scans keep posts visible. Updating preserves saved preferences and credentials; the existing picture toggle controls Gemini.
 
-Reddit Advanced Content Filter v0.1.3 catches fullwidth and invisible-character variants in keyword rules and treats whitespace, dashes, and underscores as equivalent separators in phrases. Existing whole-word boundaries, regular plurals, literal phrase substrings, and whitelist precedence remain. Relevant image descriptions, article titles, and external article-link paths now contribute evidence; URL queries and fragments are excluded, and external articles are not downloaded. UI and navigation attributes are excluded. Optional image scanning selects one permitted URL per image, falls back to the largest permitted `srcset` candidate when needed, and includes video posters within the existing four-picture cap. Late title and poster changes are observed.
+Reddit Content Manager v0.1.3 catches fullwidth and invisible-character variants in keyword rules and treats whitespace, dashes, and underscores as equivalent separators in phrases. Existing whole-word boundaries, regular plurals, literal phrase substrings, and whitelist precedence remain. Relevant image descriptions, article titles, and external article-link paths now contribute evidence; URL queries and fragments are excluded, and external articles are not downloaded. UI and navigation attributes are excluded. Optional image scanning selects one permitted URL per image, falls back to the largest permitted `srcset` candidate when needed, and includes video posters within the existing four-picture cap. Late title and poster changes are observed.
 
 Long-post AI evidence retains the original first 10,000 characters and adds a bounded tail within a 13,000-character total. Automatic decisions and new Keep overrides track full relevant content even when an edit falls outside that excerpt. Prior Keep overrides are recognized through their original evidence hashes. The matching and AI cache policies are updated, so previously classified posts may require one new automatic check within the existing limits. Saved settings, API keys, topics, budgets, request caps, and Keep records are retained. Public-feed scope, conservative uncertainty handling, provider models, and spending safeguards are unchanged.
 
 This release retains the v0.1.2 fix for repeated AI requests after returning to a feed when Reddit's account header is unavailable. The fallback identity survives navigation and reloads in the same tab. Saved AI decisions remain bounded to 1,000 entries and seven days; changed content or topics require a new check. Identified accounts remain separate, and unidentified independent tabs use separate identities. When tab storage is blocked, the fallback lasts only for the current document.
 
-Reddit Advanced Content Filter 4.0 uses the existing Greasy Fork listing and the original GitHub source filename. Model decisions can be wrong, and enabled AI sends eligible post content to OpenRouter and its provider.
+Reddit Content Manager 4.0 uses the existing Greasy Fork listing and the original GitHub source filename. Model decisions can be wrong, and enabled AI sends eligible post content to OpenRouter and its provider.
 
-Reddit Advanced Content Filter v0.1.4 checks already-loaded feed cards up to two screens below and one screen above the viewport, prioritizing visible cards. The same range applies while preparing pictures and dispatching provider requests, and observers adapt after resizing. Preview labels matches and Hide removes them before they enter view when the checks finish in time. Fast scrolling, slow providers, or exhausted limits can still leave unchecked posts visible. Looking ahead can spend the existing daily allowance on posts that are never viewed; budget, pacing, privacy exclusions and Keep overrides remain in force. This does not fetch additional Reddit pages or force lazy-loaded cards into the feed.
+Reddit Content Manager v0.1.4 checks already-loaded feed cards up to two screens below and one screen above the viewport, prioritizing visible cards. The same range applies while preparing pictures and dispatching provider requests, and observers adapt after resizing. Preview labels matches and Hide removes them before they enter view when the checks finish in time. Fast scrolling, slow providers, or exhausted limits can still leave unchecked posts visible. Looking ahead can spend the existing daily allowance on posts that are never viewed; budget, pacing, privacy exclusions and Keep overrides remain in force. This does not fetch additional Reddit pages or force lazy-loaded cards into the feed.
 
 Bluesky Content Manager 4.0 brings optional AI filtering and the tabbed settings interface to the existing Greasy Fork listing. It keeps the Bluesky-specific feed scope, account and followed-account overrides, and alt-text controls. See the [setup guide](docs/bluesky-content-manager/README.md) for backup migration and AI privacy details.
 
@@ -65,7 +65,7 @@ The table below records the configured source URLs. To reconnect a listing, open
 
 | Script | Raw URL for Source Syncing |
 | --- | --- |
-| Reddit Advanced Content Filter | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/reddit-advanced-content-filter.user.js) |
+| Reddit Content Manager | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/reddit-advanced-content-filter.user.js) |
 | Remove Disable Adblock Nag Screen on 1mov.lol | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/remove-disable-adblock-nag-screen.user.js) |
 | Bluesky Content Manager | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/bluesky-content-manager.user.js) |
 | Bluesky Multi-Column | [Raw source](https://raw.githubusercontent.com/thepick/userscripts/main/bluesky-enhanced-layout.user.js) |
@@ -126,3 +126,9 @@ Licenses and author credits are preserved as provided. Check each script's `@lic
 - [Greasy Fork API and webhook documentation](https://greasyfork.org/en/help/api)
 - [Greasy Fork metadata requirements](https://greasyfork.org/en/help/meta-keys)
 - [Greasy Fork webhook setup instructions](https://greasyfork.org/en/users/webhook-info)
+
+## Reddit Content Manager rename
+
+Reddit Content Manager 4.06 updates the existing Greasy Fork listing 516666. The source filename remains `reddit-advanced-content-filter.user.js`, so the configured source-sync URL stays valid. Namespace, storage keys, backup format identifiers, and legacy import support are preserved. Use the existing script manager entry's **Check for updates** command; manually installing code with a different name can create a second entry. Copies installed from a commit-pinned GitHub URL may require changing that existing entry's update URL to the Greasy Fork endpoint before checking for updates. Do not delete the existing entry or its stored data.
+
+Violentmonkey's [automatic update path](https://github.com/violentmonkey/violentmonkey/blob/master/src/background/utils/update.js) passes the installed ID to [the parser](https://github.com/violentmonkey/violentmonkey/blob/master/src/background/utils/db.js), which reuses the existing script record. This source inspection does not establish a live upgrade result for every script manager.
