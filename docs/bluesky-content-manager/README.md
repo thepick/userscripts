@@ -28,3 +28,7 @@ Visible posts take priority. Checks can include nearby loaded posts, so lookahea
 - **Backups & reset** lets you export settings or load a backup for review before saving. Backups from the original Bluesky Content Manager and the separate AI build use the same supported format. They exclude the OpenRouter key.
 - Updating the existing Greasy Fork installation retains saved filters. To move preferences from the separate AI build, export there, import the backup in v4.0, and save. Enter the OpenRouter key in the new installation if needed.
 - **Clear remembered blocks** resets the local keyword and alt-text decisions. **Clear AI memory and Keep overrides** resets cached AI decisions and Keep overrides while retaining daily usage.
+
+## Unified backups
+
+Both filters now export the same shared-list format, retaining each platform's own settings. Legacy backups remain importable. See [Unified Filter Backup v1](../unified-filter-backup.md) for transfer steps, limits, compatibility, and the large-editor performance caveat.

@@ -3,12 +3,12 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {webcrypto,createHash}=require('node:crypto');
 function load(){
- const source=fs.readFileSync(path.join(__dirname,'../reddit-advanced-content-filter-ai.user.js'),'utf8');
+ const source=fs.readFileSync(path.join(__dirname,'../reddit-advanced-content-filter.user.js'),'utf8');
  const expose=`Object.assign(globalThis,{compileRules,matchBlock,getPostText,aiText,aiImages,aiImageURL,aiScope,safePostURL,setRules,ruleContextValue:()=>ruleContext,legacyKeepText:post=>aiText(post,true),
  async keyProbe(content){settings.ai={...aiDefaults,enabled:true,topics:['Sports']};aiKey='dummy';aiEligible=()=>true;aiAllowed=()=>false;aiText=()=> 'same excerpt with enough evidence';aiAccount=()=> 'alice';aiEnvironment=()=> 'feed';aiValid=()=>true;isAIVisible=()=>false;watchAIPost=()=>{};keptAI=async()=>false;const inputs=[];fingerprint=async input=>{inputs.push(input);return 'a'.repeat(64)};await scheduleAI({}, {title:'Title',content,subreddit:'news',identity:{id:'abc'},url:'https://www.reddit.com/comments/abc/'},ruleEpoch);return inputs;}});`;
  assert(source.includes('\n    main();'));
  const c={console,URL,TextEncoder,crypto:webcrypto,performance,Date,setTimeout:()=>1,clearTimeout(){},window:{},location:{href:'https://www.reddit.com/',hostname:'www.reddit.com',pathname:'/',protocol:'https:'},document:{querySelector:()=>null},GM_getValue:(_k,d)=>d,GM_setValue(){},navigator:{locks:{request:async(_n,fn)=>fn()}}};
- vm.createContext(c);vm.runInContext(source.replace('\n    main();',expose),c);return c;
+ vm.createContext(c);vm.runInContext(source.replace(/const (reserveAI|settleAI|settleAIPacing|cacheAI|collectPosts|keptAI|aiImageData|fingerprint)\b/g,'let $1').replace('\n    main();',expose),c);return c;
 }
 function node(tagName,attributes={},extra={}){return {nodeType:1,tagName,className:'',childNodes:[],naturalWidth:640,naturalHeight:480,alt:attributes.alt||'',textContent:'',currentSrc:'',getAttribute:key=>attributes[key]??null,matches:()=>false,closest:()=>null,...extra};}
 function post(nodes=[],text=''){return node('ARTICLE',{}, {matches:selector=>selector.startsWith('shreddit-post,'),querySelectorAll:selector=>selector==='img'?nodes.filter(n=>n.tagName==='IMG'):selector==='video[poster]'?nodes.filter(n=>n.tagName==='VIDEO'):nodes,querySelector:()=>null,childNodes:[{nodeType:3,data:text}]});}

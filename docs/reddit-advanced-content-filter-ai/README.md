@@ -1,8 +1,8 @@
-# Reddit Advanced Content Filter
+# Reddit Content Manager
 
 Use keyword and subreddit rules to filter Reddit. You can also enable AI topic filtering through OpenRouter and optionally include pictures. AI starts off. The script works on www.reddit.com and old.reddit.com.
 
-![Reddit Advanced Content Filter settings preview](https://raw.githubusercontent.com/thepick/userscripts/main/docs/reddit-advanced-content-filter-ai/reddit-filter-ai-settings-preview.png)
+![Reddit Content Manager settings preview](https://raw.githubusercontent.com/thepick/userscripts/main/docs/reddit-advanced-content-filter-ai/reddit-filter-ai-settings-preview.png)
 
 ## Quick start
 
@@ -51,3 +51,7 @@ Checks prioritize visible cards and can look ahead up to two screens below and o
 - **OpenRouter is busy.** The script pauses after a rate limit and retries automatically. **Retry AI checks** is available under **Advanced options**. Checks resume after you close settings.
 - **A picture check failed.** Make sure the OpenRouter key permits both models. A failed scan leaves the post visible, and other posts can still be checked.
 - **Settings changed in another tab.** Export your current draft if you want a copy, then close and reopen settings to load the latest saved version.
+
+## Unified backups
+
+Both filters now export the same shared-list format, retaining each platform's own settings. Legacy backups remain importable. See [Unified Filter Backup v1](../unified-filter-backup.md) for transfer steps, limits, compatibility, and the large-editor performance caveat.

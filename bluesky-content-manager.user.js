@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bluesky Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.02
+// @version      4.06
 // @description  Filter Bluesky by meaning with optional OpenRouter AI topics, preview and reveal controls, plus keyword, account, allowlist, and alt-text filters.
 // @author       Stuart Saddler
 // @license      MIT
@@ -87,6 +87,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 .bcm-dialog button{min-height:38px;padding:7px 11px;border:1px solid var(--bcm-border);border-radius:7px;font:inherit;font-weight:600;color:var(--bcm-fg);background:var(--bcm-bg);cursor:pointer}
 .bcm-dialog button:hover:not(:disabled){border-color:var(--bcm-accent);background:var(--bcm-info)}.bcm-dialog button:disabled{opacity:.62;cursor:default}
 .bcm-dialog button.bcm-primary,.bcm-dialog button.bcm-primary:hover:not(:disabled){background:var(--bcm-accent);color:var(--bcm-on-accent);border-color:transparent;font-weight:650}
+#bcm-title:focus{outline:none}
 .bcm-dialog :focus-visible{outline:2px solid var(--bcm-accent);outline-offset:2px}.bcm-dialog .bcm-nav :focus-visible{outline-offset:-3px}.bcm-dialog ::selection{background:var(--bcm-accent);color:var(--bcm-on-accent)}
 .bcm-dialog a{color:var(--bcm-accent);text-underline-offset:3px}
 .bcm-row,.bcm-find,.bcm-pager{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.bcm-find{flex-wrap:nowrap;margin-top:8px}.bcm-find button,.bcm-actions button{flex:none}
@@ -98,11 +99,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 .bcm-dialog summary{padding:4px 0;cursor:pointer}.bcm-dialog details[open] summary{margin-bottom:8px}
 .bcm-history-tabs{margin:10px 0 14px}.bcm-dialog .bcm-history-tabs button[aria-selected="true"]{color:var(--bcm-accent);background:var(--bcm-info);border-color:var(--bcm-accent)}
 .bcm-history{list-style:none;padding:0;margin:10px 0}.bcm-history li{border-bottom:1px solid var(--bcm-line);padding:10px 0;overflow-wrap:anywhere}.bcm-history p{margin:4px 0}.bcm-pager{justify-content:space-between}
+.bcm-editor-pages{margin-top:8px}.bcm-editor-pages span{flex-basis:100%;order:-1}
 .bcm-notice{position:fixed;bottom:16px;right:16px;z-index:1000000;max-width:min(380px,calc(100% - 32px));padding:12px 16px;border:1px solid #8ba3b5;border-radius:8px;background:#172b3a;color:white;font:14px/1.4 system-ui,sans-serif;cursor:pointer}
 @supports (grid-template-rows:subgrid){
     @media (width > 560px){
         #bcm-panel-filters .bcm-editors{row-gap:0}
-        #bcm-panel-filters .bcm-editor{display:grid;grid-template-rows:subgrid;grid-row:span 4}
+        #bcm-panel-filters .bcm-editor{display:grid;grid-template-rows:subgrid;grid-row:span 5}
     }
 }
 @media(max-width:560px){.bcm-editors{grid-template-columns:1fr}.bcm-head,.bcm-actions,.bcm-body{padding:13px 15px}.bcm-actions{flex-wrap:wrap}.bcm-actions .bcm-row{margin-left:auto}.bcm-nav{padding-inline:5px}}
@@ -112,17 +114,210 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     GM_addStyle(`.bcm-ai-hidden{display:none!important}html .bcm-load-paused{position:fixed!important;top:calc(100vh + 96px)!important;left:0!important;transform:none!important}.bcm-ai-panel{box-sizing:border-box;margin:8px;padding:12px;background:#eaf4ff;color:#172b3a;border:1px solid #718899;border-radius:6px;font:14px/1.5 system-ui;overflow-wrap:anywhere}.bcm-ai-panel button{margin:6px 8px 0 0;min-height:40px;padding:8px;background:#fff;color:#172b3a;border:1px solid #718899;border-radius:6px;font:inherit;cursor:pointer}.bcm-ai-panel button:focus-visible{outline:3px solid #0067b4;outline-offset:2px}@media(prefers-color-scheme:dark){.bcm-ai-panel{background:#1e3040;color:#edf4f9}.bcm-ai-panel button{background:#15202b;color:#edf4f9}}`);
     /*** SETTINGS & MATCHING ***/
     function normalizeUsername(value) { return value.toLowerCase().replace(/[\u200B-\u200F\u202A-\u202F]/g, '').trim(); }
-    function normalizeTerms(values) {
-        if (!Array.isArray(values) || values.some(value => typeof value !== 'string'))
-            throw new Error('Use a list of text entries.');
-        if (values.length > 50000 || values.some(value => value.length > 5000))
-            throw new Error('The list is too large. Use fewer or shorter entries.');
-        return [...new Set(values.map(value => value.trim().toLowerCase()).filter(Boolean))];
+    // Unified Filter Backup v1. Keep this block identical in both standalone scripts.
+    const BACKUP_FILE_BYTES = 10 * 1024 * 1024, FILTER_TEXT_BYTES = 8 * 1024 * 1024;
+    function normalizeFilterList(values, label) {
+        if (!Array.isArray(values)) throw new Error(label + ' must be a list of text entries.');
+        const result = [], seen = new Set();
+        for (const value of values) {
+            if (typeof value !== 'string') throw new Error(label + ' contains a non-text entry.');
+            const term = value.trim().toLowerCase();
+            if (/[\r\n]/.test(term)) throw new Error(label + ' entries must each fit on one line. Split multiline entries before importing.');
+            if (term.length > 10000) throw new Error(label + ' entries must be at most 10,000 characters (UTF-16 units).');
+            if (term && !seen.has(term)) {
+                seen.add(term); result.push(term);
+                if (result.length > 100000) throw new Error(label + ' must contain at most 100,000 unique entries.');
+            }
+        }
+        return result;
+    }
+    function validateSharedFilters(blocklist, allowlist) {
+        const shared = { blocklist: normalizeFilterList(blocklist, 'Blocklist'), allowlist: normalizeFilterList(allowlist, 'Allowlist') };
+        const bytes = new TextEncoder().encode(shared.blocklist.join('\n')).length + new TextEncoder().encode(shared.allowlist.join('\n')).length;
+        if (bytes > FILTER_TEXT_BYTES) throw new Error('Combined normalized filter text must be at most 8 MiB of UTF-8 text.');
+        return shared;
+    }
+    function backupObject(value, label) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(label + ' must be an object.');
+    }
+    function backupFields(value, names, label) {
+        backupObject(value, label);
+        for (const key of Object.keys(value)) {
+            if (names.indexOf(key) === -1) throw new Error(label + ' contains an unsupported field: ' + key + '. Remove unknown fields and credentials before importing.');
+        }
+    }
+    function preservePlatformSettings(value) {
+        if (value === undefined) return {};
+        backupFields(value, ['bluesky', 'reddit'], 'Platforms');
+        const result = {};
+        for (const platform of Object.keys(value)) {
+            const options = value[platform], copy = {};
+            backupFields(options, platform === 'bluesky' ? ['autoWhitelistEnabled', 'altTextEnforcementEnabled', 'ai'] : ['ai'], platform + ' settings');
+            for (const key of ['autoWhitelistEnabled', 'altTextEnforcementEnabled']) {
+                if (Object.prototype.hasOwnProperty.call(options, key)) {
+                    if (typeof options[key] !== 'boolean') throw new Error(platform + ' ' + key + ' must be true or false.');
+                    copy[key] = options[key];
+                }
+            }
+            if (Object.prototype.hasOwnProperty.call(options, 'ai')) {
+                const ai = options.ai;
+                backupFields(ai, ['enabled', 'mode', 'scope', 'analyzeImages', 'topics', 'budget', 'requestLimit'], platform + ' AI settings');
+                if ((platform === 'reddit' && ai.scope !== 'all') || (platform === 'bluesky' && ['news', 'all'].indexOf(ai.scope) === -1)) throw new Error(platform + ' AI scope is invalid.');
+                // Validate with the local schema, then retain the other platform's scope.
+                copy.ai = validateAI(Object.assign({ topics: [] }, ai, { scope: 'all' }));
+                copy.ai.scope = ai.scope;
+            }
+            result[platform] = copy;
+        }
+        return result;
+    }
+    function mergePlatformSettings(current, incoming) {
+        const result = preservePlatformSettings(current), next = preservePlatformSettings(incoming);
+        for (const platform of Object.keys(next)) result[platform] = Object.assign({}, result[platform] || {}, next[platform]);
+        return result;
+    }
+    function sharedAITopics(shared, platforms) {
+        let topics;
+        if (Object.prototype.hasOwnProperty.call(shared, 'aiTopics')) topics = shared.aiTopics;
+        else {
+            for (const platform of ['bluesky', 'reddit']) {
+                if (platforms[platform] && platforms[platform].ai) {
+                    if (!topics) topics = [];
+                    topics = topics.concat(platforms[platform].ai.topics);
+                }
+            }
+            if (topics) topics = [...new Set(topics)];
+        }
+        if (topics === undefined) return undefined;
+        if (!Array.isArray(topics) || topics.some(topic => typeof topic !== 'string' || topic.length > MAX_AI_TOPIC_LENGTH))
+            throw new Error('Shared AI prompts must be text entries of at most 1,000 characters each.');
+        topics = [...new Set(topics.map(topic => topic.trim()).filter(Boolean))];
+        if (topics.length > 20) throw new Error('Shared AI prompts must contain at most 20 topics. Combine the older platform-specific topics before importing.');
+        return topics;
+    }
+    function parseBackup(text) {
+        if (new TextEncoder().encode(text).length > BACKUP_FILE_BYTES) throw new Error('Settings files must be at most 10 MiB.');
+        let value;
+        try { value = JSON.parse(text); } catch (error) { throw new Error('The file is not valid JSON.'); }
+        backupObject(value, 'Backup');
+        if (value.version !== 1) throw new Error('Unsupported backup version. This script supports version 1.');
+        let shared, platforms = {}, source = '';
+        if (value.format === 'unified-content-filter-backup') {
+            backupObject(value.shared, 'Shared filters');
+            shared = validateSharedFilters(value.shared.blocklist, value.shared.allowlist);
+            platforms = preservePlatformSettings(value.platforms);
+        } else if (value.format === 'bluesky-content-manager-settings') {
+            source = 'bluesky';
+            backupObject(value.settings, 'Bluesky settings');
+            shared = validateSharedFilters(value.settings.filteredTerms, value.settings.manualWhitelistTerms);
+            platforms.bluesky = {};
+            for (const key of ['autoWhitelistEnabled', 'altTextEnforcementEnabled', 'ai']) {
+                if (Object.prototype.hasOwnProperty.call(value.settings, key)) platforms.bluesky[key] = value.settings[key];
+            }
+        } else if (['reddit-advanced-content-filter-settings', 'reddit-advanced-content-filter-ai-settings'].indexOf(value.format) !== -1) {
+            source = 'reddit';
+            shared = validateSharedFilters(value.blocklist, value.whitelist);
+            platforms.reddit = {};
+            if (Object.prototype.hasOwnProperty.call(value, 'ai')) platforms.reddit.ai = value.ai;
+        } else throw new Error('Unsupported backup format. Choose a unified, Bluesky, or Reddit settings backup.');
+        platforms = preservePlatformSettings(platforms);
+        const topics = sharedAITopics(value.format === 'unified-content-filter-backup' ? value.shared : {}, platforms);
+        if (topics !== undefined) shared.aiTopics = topics;
+        return { shared, platforms, source };
+    }
+    function createUnifiedBackup(shared, platforms) {
+        const value = { format: 'unified-content-filter-backup', version: 1, exportedAt: new Date().toISOString(), shared: validateSharedFilters(shared.blocklist, shared.allowlist), platforms: preservePlatformSettings(platforms) };
+        value.shared.aiTopics = sharedAITopics(shared, value.platforms) || [];
+        for (const platform of Object.keys(value.platforms)) {
+            if (value.platforms[platform].ai) delete value.platforms[platform].ai.topics;
+        }
+        if (new TextEncoder().encode(JSON.stringify(value)).length > BACKUP_FILE_BYTES) throw new Error('The JSON backup exceeds 10 MiB. Shorten the lists before exporting.');
+        return value;
+    }
+    // End Unified Filter Backup v1.
+
+    // Keep native textarea layout bounded while retaining the complete unsaved draft.
+    function createPagedEditor(editor, previous, next, label, bar) {
+        let pages = [''], page = 0;
+        const offset = () => pages.slice(0, page).reduce((sum, text) => sum + text.length + 1, 0);
+        const getText = () => { pages[page] = editor.value; return pages.join('\n'); };
+        function refresh() {
+            bar.hidden = pages.length === 1;
+            label.textContent = 'Page ' + (page + 1) + ' of ' + pages.length + '. Edits affect this page; Find, Save and Export use all pages.';
+            previous.disabled = editor.disabled || page === 0;
+            next.disabled = editor.disabled || page === pages.length - 1;
+        }
+        function show(start = 0, end = start) {
+            editor.value = pages[page];
+            editor.setSelectionRange(start, end);
+            editor.scrollTop = 0;
+            refresh();
+        }
+        function setText(text, caret = 0) {
+            pages = []; let lines = [], size = 0;
+            for (const line of text.split('\n')) {
+                if (lines.length && (lines.length >= 1000 || size + line.length + 1 > 65536)) {
+                    pages.push(lines.join('\n')); lines = []; size = 0;
+                }
+                lines.push(line); size += line.length + 1;
+            }
+            pages.push(lines.join('\n')); page = 0;
+            while (page < pages.length - 1 && caret > pages[page].length) { caret -= pages[page].length + 1; page++; }
+            show(caret);
+        }
+        function capture(event) {
+            if (event && event.isComposing) return;
+            if (editor.value.length > 65536 || editor.value.split('\n').length > 1000) {
+                const caret = offset() + editor.selectionEnd;
+                setText(getText(), caret);
+            } else { pages[page] = editor.value; refresh(); }
+        }
+        editor.addEventListener('input', capture);
+        editor.addEventListener('compositionend', capture);
+        previous.addEventListener('click', () => { getText(); page = Math.max(0, page - 1); show(); editor.focus(); });
+        next.addEventListener('click', () => { getText(); page = Math.min(pages.length - 1, page + 1); show(); editor.focus(); });
+        function findNext(query) {
+            const raw = getText(), text = raw.toLowerCase();
+            const start = raw.slice(0, offset() + editor.selectionEnd).toLowerCase().length;
+            query = query.toLowerCase();
+            if (!query) return;
+            let index = text.indexOf(query, start);
+            if (index < 0) index = text.indexOf(query);
+            if (index < 0) return;
+            let end = index + query.length;
+            if (raw.length !== text.length) {
+                let original = 0, folded = 0, mappedStart = 0, mappedEnd = 0;
+                for (const character of raw) {
+                    const nextFolded = folded + character.toLowerCase().length;
+                    if (folded <= index && index < nextFolded) mappedStart = original;
+                    original += character.length;
+                    if (folded < end && end <= nextFolded) { mappedEnd = original; break; }
+                    folded = nextFolded;
+                }
+                index = mappedStart; end = mappedEnd;
+            }
+            const length = end - index;
+            page = 0;
+            while (page < pages.length - 1 && index > pages[page].length) { index -= pages[page].length + 1; page++; }
+            show(index, index + length); editor.focus();
+            editor.scrollTop = editor.value.slice(0, index).split('\n').length * parseFloat(getComputedStyle(editor).lineHeight);
+        }
+        return { getText, setText, findNext, refresh };
+    }
+
+
+
+    function normalizeTerms(values) { return normalizeFilterList(values, 'Filter list'); }
+    function exportBackup(value) {
+        const platforms = preservePlatformSettings(value.backupPlatforms);
+        platforms.bluesky = { ai: value.ai, autoWhitelistEnabled: value.autoWhitelistEnabled, altTextEnforcementEnabled: value.altTextEnforcementEnabled };
+        return createUnifiedBackup({ blocklist: value.filteredTerms, allowlist: value.manualWhitelistTerms, aiTopics: value.ai.topics }, platforms);
     }
     function validateSettings(value) {
         if (!value || typeof value !== 'object' || typeof value.autoWhitelistEnabled !== 'boolean' || typeof value.altTextEnforcementEnabled !== 'boolean')
             throw new Error('The settings file has invalid options.');
-        return { filteredTerms: normalizeTerms(value.filteredTerms), manualWhitelistTerms: normalizeTerms(value.manualWhitelistTerms), autoWhitelistEnabled: value.autoWhitelistEnabled, altTextEnforcementEnabled: value.altTextEnforcementEnabled, ai: validateAI(value.ai) };
+        const shared = validateSharedFilters(value.filteredTerms, value.manualWhitelistTerms);
+        return { filteredTerms: shared.blocklist, manualWhitelistTerms: shared.allowlist, autoWhitelistEnabled: value.autoWhitelistEnabled, altTextEnforcementEnabled: value.altTextEnforcementEnabled, ai: validateAI(value.ai), backupPlatforms: preservePlatformSettings(value.backupPlatforms) };
     }
     function reportIssue(key, message) { issues.set(key, message); scheduleMenu(); updateDialogStatus(); }
     function clearIssue(key) { if (issues.delete(key))
@@ -151,6 +346,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                 if (parsed.version !== 1 || !parsed.settings || typeof parsed.settings !== 'object')
                     throw new Error();
                 const value = Object.assign({}, settings);
+                try { value.backupPlatforms = preservePlatformSettings(parsed.settings.backupPlatforms); }
+                catch (error) { value.backupPlatforms = settings.backupPlatforms || {}; reportIssue('backup-platforms', 'Retained platform settings are invalid. Your active filters were recovered; export a backup before saving to repair this record.'); }
                 try {
                     value.ai = validateAI(parsed.settings.ai);
                 }
@@ -172,6 +369,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                         reportIssue(key, `The saved ${SETTING_LABELS[key]} field is invalid. Other settings were recovered; its last valid value was kept. Export a backup before correcting it.`);
                     }
                 }
+                try { validateSharedFilters(value.filteredTerms, value.manualWhitelistTerms); }
+                catch (error) { value.filteredTerms = settings.filteredTerms; value.manualWhitelistTerms = settings.manualWhitelistTerms; reportIssue('settings', error.message + ' Saved data was not overwritten; the last valid filters were kept.'); }
                 return { value, raw };
             }
             catch (e) {
@@ -205,7 +404,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         catch (e) {
             reportIssue('whitelistedUsers', 'Some legacy allowed accounts could not be read. Their original data has not been overwritten.');
         }
-        return { value, raw };
+        try { validateSharedFilters(value.filteredTerms, value.manualWhitelistTerms); }
+                catch (error) { value.filteredTerms = settings.filteredTerms; value.manualWhitelistTerms = settings.manualWhitelistTerms; reportIssue('settings', error.message + ' Saved data was not overwritten; the last valid filters were kept.'); }
+                return { value, raw };
     }
     function initializeSettings() { const loaded = readSettings(); settingsRaw = loaded.raw; installSettings(loaded.value); settingsLoaded = true; }
     function installSettings(value) {
@@ -218,14 +419,58 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         resetAI();
         ({ filteredTerms, manualWhitelistTerms, autoWhitelistEnabled, altTextEnforcementEnabled } = settings);
         patterns.clear();
-        for (const term of filteredTerms.concat(manualWhitelistTerms))
-            termToRegex(term);
+        allowedKeywordTerms = manualWhitelistTerms.filter(term => !term.startsWith('@'));
+        compileTerms(filteredTerms); compileTerms(allowedKeywordTerms);
     }
     function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
     function foldText(value) { return value.normalize('NFKC').replace(/[\u00AD\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '').toLowerCase(); }
     const phraseSeparators = new RegExp('[\\s\\p{Pd}_]+', 'gu');
     function phraseText(value) { return value.replace(phraseSeparators, ' '); }
     function cleanText(value) { return phraseText(foldText(value)).trim(); }
+    // A conservative candidate index; the existing matcher still decides every match.
+    function indexText(text) { return text.toUpperCase().toLowerCase().replace(/\u03c2/g, '\u03c3'); }
+    function buildMatchIndex(entries) {
+        const index = new Map();
+        index.needles = [];
+        entries.forEach((term, position) => {
+            let entry = foldText(term).trim();
+            if (!entry) return;
+            const variants = [phraseText(entry)];
+            if (/^[a-z]+$/.test(entry)) {
+                if (/[^aeiou]y$/.test(entry)) variants.push(entry.slice(0, -1) + 'ies');
+                else if (/(s|x|z|ch|sh)$/.test(entry)) variants.push(entry + 'es');
+                else variants.push(entry + 's');
+            }
+            index.needles[position] = variants.map(indexText);
+            if (/^[a-z]+$/.test(entry) && /[^aeiou]y$/.test(entry)) entry = entry.slice(0, -1);
+            const key = indexText(phraseText(entry)).slice(0, 3);
+            if (!index.has(key)) index.set(key, []);
+            index.get(key).push(position);
+        });
+        return index;
+    }
+    function matchCandidates(text, phrases, index) {
+        const found = new Set(), visited = new Set();
+        for (const value of [indexText(text), indexText(phrases)]) {
+            for (let start = 0; start < value.length; start++) {
+                for (let length = 1; length <= 3 && start + length <= value.length; length++) {
+                    const key = value.slice(start, start + length);
+                    if (visited.has(key)) continue;
+                    visited.add(key);
+                    const positions = index.get(key);
+                    if (positions) for (const position of positions) found.add(position);
+                }
+            }
+        }
+        const searchable = indexText(text), searchablePhrases = indexText(phrases);
+        return Array.from(found).filter(position => index.needles[position].some(needle => searchable.indexOf(needle) !== -1 || searchablePhrases.indexOf(needle) !== -1)).sort((a, b) => a - b);
+    }
+    const matchIndexes = new WeakMap();
+    let allowedKeywordTerms = [];
+    function compileTerms(terms) {
+        if (!matchIndexes.has(terms)) matchIndexes.set(terms, buildMatchIndex(terms));
+        return terms;
+    }
     function termToRegex(term) {
         if (!term || typeof term !== 'string')
             return null;
@@ -254,7 +499,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         if (!text || !terms.length)
             return null;
         const folded = foldText(text), phrases = phraseText(folded);
-        for (const term of terms) {
+        compileTerms(terms);
+        for (const position of matchCandidates(folded, phrases, matchIndexes.get(terms))) {
+            const term = terms[position];
             const re = termToRegex(term);
             if (re && re.test(/\s/.test(foldText(term).trim()) ? phrases : folded))
                 return term;
@@ -457,7 +704,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         if (isWhitelisted(post, data))
             return null;
         const combined = [data.general, data.text, data.names, data.labels, ...data.images.map(img => img.text)].join(' ');
-        if (regexMatchAny(combined, manualWhitelistTerms.filter(term => !term.startsWith('@'))))
+        if (regexMatchAny(combined, allowedKeywordTerms))
             return null;
         if (altTextEnforcementEnabled && data.images.some(img => img.required && !img.alt.trim()))
             return { reason: 'Alt-text enforcement', keyword: 'missing alt-text' };
@@ -823,7 +1070,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             <div class="bcm-shell">
                 <header class="bcm-head">
                     <div><p>Bluesky Content Manager</p><h2 id="bcm-title" tabindex="-1">Settings</h2></div>
-                    <a href="https://github.com/thepick/userscripts/blob/main/docs/bluesky-content-manager/README.md" target="_blank" rel="noopener noreferrer">Setup guide</a>
                 </header>
                 <div class="bcm-nav" id="bcm-settings-tabs" role="tablist" aria-label="Settings sections">
                     <button id="bcm-tab-filters" data-bcm-tab="filters" type="button" role="tab" aria-selected="true" aria-controls="bcm-panel-filters">Filters</button>
@@ -838,13 +1084,15 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                             <div class="bcm-editor">
                                 <div class="bcm-field-title"><label for="bcm-blocklist">Blocklist</label><span class="bcm-help" id="bcm-block-count" aria-live="polite"></span></div>
                                 <p class="bcm-help" id="bcm-block-help">One keyword or phrase per line.</p>
-                                <textarea id="bcm-blocklist" data-bcm-draft spellcheck="false" aria-describedby="bcm-block-help bcm-block-count"></textarea>
+                                <textarea id="bcm-blocklist" data-bcm-draft spellcheck="false" aria-describedby="bcm-block-help bcm-block-count bcm-blocklist-page"></textarea>
+                                <div id="bcm-blocklist-pages" class="bcm-pager bcm-editor-pages" hidden><button id="bcm-blocklist-previous-page" type="button" aria-label="Previous page of blocklist">Previous page</button><span id="bcm-blocklist-page" class="bcm-help" role="status"></span><button id="bcm-blocklist-next-page" type="button" aria-label="Next page of blocklist">Next page</button></div>
                                 <div class="bcm-find"><input type="search" id="bcm-block-find" aria-label="Find in blocklist" placeholder="Find in blocklist"><button type="button" id="bcm-block-next">Next match</button></div>
                             </div>
                             <div class="bcm-editor">
                                 <div class="bcm-field-title"><label for="bcm-allowlist">Allowlist</label><span class="bcm-help" id="bcm-allow-count" aria-live="polite"></span></div>
                                 <p class="bcm-help" id="bcm-allow-help">One @handle or content term per line. Overrides blocking rules.</p>
-                                <textarea id="bcm-allowlist" data-bcm-draft spellcheck="false" aria-describedby="bcm-allow-help bcm-allow-count"></textarea>
+                                <textarea id="bcm-allowlist" data-bcm-draft spellcheck="false" aria-describedby="bcm-allow-help bcm-allow-count bcm-allowlist-page"></textarea>
+                                <div id="bcm-allowlist-pages" class="bcm-pager bcm-editor-pages" hidden><button id="bcm-allowlist-previous-page" type="button" aria-label="Previous page of allowlist">Previous page</button><span id="bcm-allowlist-page" class="bcm-help" role="status"></span><button id="bcm-allowlist-next-page" type="button" aria-label="Next page of allowlist">Next page</button></div>
                                 <div class="bcm-find"><input type="search" id="bcm-allow-find" aria-label="Find in allowlist" placeholder="Find in allowlist"><button type="button" id="bcm-allow-next">Next match</button></div>
                             </div>
                         </div>
@@ -898,6 +1146,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             </div>`;
         const find = id => dialog.querySelector('#' + id);
         let dirty = false, saving = false, page = 0, baseRaw = settingsRaw;
+        let draftPlatforms = preservePlatformSettings(settings.backupPlatforms);
         const errorDetails = find('bcm-errors');
         const selectTab = setupTabs(find('bcm-settings-tabs'), () => { dialog.querySelector('.bcm-body').scrollTop = 0; });
         setupTabs(find('bcm-history-tabs'));
@@ -938,7 +1187,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             const unique = Array.from(new Set(lines.map(line => line.trim()).filter(Boolean)));
             topics.setCustomValidity(lines.length > 20 ? 'Use at most 20 lines for AI topics.' :
                 lines.some(line => line.length > MAX_AI_TOPIC_LENGTH) ? `Limit each topic to ${MAX_AI_TOPIC_LENGTH.toLocaleString('en-US')} characters.` :
-                    unique.join('\n').length > 3000 ? 'Keep all AI topics together under 3,000 characters.' : '');
+                    '');
             return [topics, find('bcm-ai-budget'), find('bcm-ai-limit')].find(field => !field.validity.valid);
         }
         function revealAIField(field) {
@@ -948,11 +1197,13 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                 details.open = true;
             field.focus();
         }
-        find('bcm-blocklist').value = filteredTerms.join('\n');
-        find('bcm-allowlist').value = manualWhitelistTerms.join('\n');
+        const blockEditor = createPagedEditor(find('bcm-blocklist'), find('bcm-blocklist-previous-page'), find('bcm-blocklist-next-page'), find('bcm-blocklist-page'), find('bcm-blocklist-pages'));
+        const allowEditor = createPagedEditor(find('bcm-allowlist'), find('bcm-allowlist-previous-page'), find('bcm-allowlist-next-page'), find('bcm-allowlist-page'), find('bcm-allowlist-pages'));
+        blockEditor.setText(filteredTerms.join('\n'));
+        allowEditor.setText(manualWhitelistTerms.join('\n'));
         find('bcm-alt').checked = altTextEnforcementEnabled;
         find('bcm-follows').checked = autoWhitelistEnabled;
-        const draft = () => validateSettings({ filteredTerms: find('bcm-blocklist').value.split('\n'), manualWhitelistTerms: find('bcm-allowlist').value.split('\n'), altTextEnforcementEnabled: find('bcm-alt').checked, autoWhitelistEnabled: find('bcm-follows').checked, ai: draftAI() });
+        const draft = () => validateSettings({ filteredTerms: blockEditor.getText().split('\n'), manualWhitelistTerms: allowEditor.getText().split('\n'), altTextEnforcementEnabled: find('bcm-alt').checked, autoWhitelistEnabled: find('bcm-follows').checked, ai: draftAI(), backupPlatforms: draftPlatforms });
         function status(message, error = false) { find('bcm-save-status').textContent = message; find('bcm-save-status').dataset.error = String(error); }
         updateDialogStatus = () => {
             if (!configDialog)
@@ -996,10 +1247,10 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             find('bcm-history-prev').disabled = saving || page === 0;
             find('bcm-history-next').disabled = saving || page >= pages - 1;
         };
-        function setupEditor(prefix, textareaId) {
+        function setupEditor(prefix, textareaId, model) {
             const editor = find(textareaId), search = find(prefix + '-find'), next = find(prefix + '-next');
-            function update() { try {
-                const entries = normalizeTerms(editor.value.split('\n')), query = search.value.toLowerCase(), matches = query ? entries.filter(entry => entry.includes(query)).length : 0;
+            function update() { model.refresh(); try {
+                const entries = normalizeTerms(model.getText().split('\n')), query = search.value.toLowerCase(), matches = query ? entries.filter(entry => entry.includes(query)).length : 0;
                 find(prefix + '-count').textContent = `${entries.length.toLocaleString()} unique entries${query ? ` · ${matches.toLocaleString()} matching entries` : ''}`;
                 next.disabled = saving || !query || !matches;
             }
@@ -1008,16 +1259,11 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             } }
             editor.addEventListener('input', update);
             search.addEventListener('input', update);
-            next.addEventListener('click', () => { const text = editor.value.toLowerCase(), query = search.value.toLowerCase(); let index = text.indexOf(query, editor.selectionEnd); if (index < 0)
-                index = text.indexOf(query); if (index >= 0) {
-                editor.focus();
-                editor.setSelectionRange(index, index + query.length);
-                editor.scrollTop = (editor.value.slice(0, index).split('\n').length - 1) * parseFloat(getComputedStyle(editor).lineHeight);
-            } });
+            next.addEventListener('click', () => model.findNext(search.value));
             update();
             return update;
         }
-        const updateBlock = setupEditor('bcm-block', 'bcm-blocklist'), updateAllow = setupEditor('bcm-allow', 'bcm-allowlist');
+        const updateBlock = setupEditor('bcm-block', 'bcm-blocklist', blockEditor), updateAllow = setupEditor('bcm-allow', 'bcm-allowlist', allowEditor);
         function beginOperation(message) {
             if (saving || configDialog !== dialog)
                 return null;
@@ -1067,7 +1313,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             status('Unsaved changes.');
         } });
         const renderPreview = () => { try {
-            const text = find('bcm-preview').value, allow = regexMatchAny(text, normalizeTerms(find('bcm-allowlist').value.split('\n')).filter(term => !term.startsWith('@'))), block = regexMatchAny(text, normalizeTerms(find('bcm-blocklist').value.split('\n')));
+            if (!find('bcm-preview').value.trim()) { find('bcm-preview-result').hidden = true; return; }
+            const text = find('bcm-preview').value, allow = regexMatchAny(text, normalizeTerms(allowEditor.getText().split('\n')).filter(term => !term.startsWith('@'))), block = regexMatchAny(text, normalizeTerms(blockEditor.getText().split('\n')));
             const result = find('bcm-preview-result');
             result.hidden = !text.trim();
             result.dataset.blocked = String(!allow && Boolean(block));
@@ -1103,9 +1350,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             endOperation(operation);
         } }));
         find('bcm-export').addEventListener('click', () => { try {
-            const url = URL.createObjectURL(new Blob([JSON.stringify({ format: 'bluesky-content-manager-settings', version: 1, settings: draft() }, null, 2)], { type: 'application/json' })), link = element('a');
+            const url = URL.createObjectURL(new Blob([JSON.stringify(exportBackup(draft()))], { type: 'application/json' })), link = element('a');
             link.href = url;
-            link.download = 'bluesky-content-manager-settings.json';
+            link.download = 'content-filter-backup.json';
             link.click();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
             status('Settings backup exported. Unsaved editor changes are included.');
@@ -1123,20 +1370,21 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                 return;
             let loaded = false;
             try {
-                if (file.size > 2 * 1024 * 1024)
-                    throw new Error('Choose a settings file smaller than 2 MB.');
-                const value = JSON.parse(yield file.text());
-                if (value.format !== 'bluesky-content-manager-settings' || value.version !== 1)
-                    throw new Error('Choose a Bluesky Content Manager settings backup.');
-                const imported = validateSettings(value.settings);
-                find('bcm-blocklist').value = imported.filteredTerms.join('\n');
-                find('bcm-allowlist').value = imported.manualWhitelistTerms.join('\n');
-                find('bcm-alt').checked = imported.altTextEnforcementEnabled;
-                find('bcm-follows').checked = imported.autoWhitelistEnabled;
-                if (value.settings.ai)
-                    applyAIDraft(dialog, imported.ai);
+                if (file.size > BACKUP_FILE_BYTES) throw new Error('Settings files must be at most 10 MiB.');
+                const backup = parseBackup(yield file.text());
+                if (configDialog !== dialog) return;
+                const options = backup.platforms.bluesky || {};
+                const platforms = mergePlatformSettings(draftPlatforms, backup.platforms);
+                if (dirty && !window.confirm('Replace your unsaved draft with this backup?')) return;
+                blockEditor.setText(backup.shared.blocklist.join('\n'));
+                allowEditor.setText(backup.shared.allowlist.join('\n'));
+                if (options.altTextEnforcementEnabled !== undefined) find('bcm-alt').checked = options.altTextEnforcementEnabled;
+                if (options.autoWhitelistEnabled !== undefined) find('bcm-follows').checked = options.autoWhitelistEnabled;
+                if (options.ai) applyAIDraft(dialog, options.ai);
+                if (backup.shared.aiTopics !== undefined) find('bcm-ai-topics').value = backup.shared.aiTopics.join('\n');
+                draftPlatforms = platforms;
                 loaded = dirty = true;
-                status('Backup loaded into the editors. Review it, then choose Save changes.');
+                status(backup.shared.blocklist.length.toLocaleString() + ' blocked and ' + backup.shared.allowlist.length.toLocaleString() + ' allowed entries loaded. ' + (backup.source && backup.source !== 'bluesky' ? 'Shared lists and AI prompts apply here; other-platform controls are retained for export. ' : '') + 'Review, then choose Save changes.');
             }
             catch (error) {
                 status(`Import failed. ${error.message} Your lists were kept.`, true);
@@ -1174,12 +1422,13 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                     return;
                 const raw = JSON.stringify({ version: 1, settings: value });
                 yield GM_setValue(SETTINGS_KEY, raw);
+                if (GM_getValue(SETTINGS_KEY, null) !== raw) throw new Error('Storage verification failed. Export your draft and retry; saved data may be incomplete.');
                 settingsRaw = raw;
                 baseRaw = raw;
                 installSettings(value);
                 for (const key of ['settings', SETTINGS_KEY, 'filteredTerms', 'manualWhitelistTerms', 'autoWhitelistEnabled', 'altTextEnforcementEnabled', 'whitelistedUsers'])
                     issues.delete(key);
-                issues.delete('ai-settings');
+                issues.delete('ai-settings'); issues.delete('backup-platforms');
                 yield refreshEnvironment(true);
                 dirty = false;
                 status('Saved. Filters updated without reloading the page.');
@@ -1436,8 +1685,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         if (!value || typeof value !== 'object' || typeof value.enabled !== 'boolean' || (value.analyzeImages !== undefined && typeof value.analyzeImages !== 'boolean') || !['preview', 'hide'].includes(value.mode) || !['news', 'all'].includes(value.scope) || !Array.isArray(value.topics) || value.topics.length > 20 || value.topics.some(t => typeof t !== 'string' || t.length > MAX_AI_TOPIC_LENGTH) || !Number.isFinite(value.budget) || value.budget < .01 || value.budget > 10 || !Number.isInteger(value.requestLimit) || value.requestLimit < 1 || value.requestLimit > 5000)
             throw Error(`AI settings need up to 20 topics (${MAX_AI_TOPIC_LENGTH.toLocaleString('en-US')} characters each), a daily budget of $0.01–$10, and 1–5,000 requests.`);
         const topics = [...new Set(value.topics.map(t => t.trim()).filter(Boolean))];
-        if (topics.join('\n').length > 3000)
-            throw Error('Keep all AI topic descriptions together under 3,000 characters.');
         return { enabled: value.enabled, mode: value.mode, scope: value.scope, analyzeImages: (_a = value.analyzeImages) !== null && _a !== void 0 ? _a : false, topics, budget: value.budget, requestLimit: value.requestLimit };
     }
     function aiEnvironment() { let feed = ''; try {
@@ -1461,7 +1708,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             return false;
         }
     }
-    function aiAllowed(post, data) { return isWhitelisted(post, data) || !!regexMatchAny([data.general, data.text, data.names, data.labels, ...data.images.map(i => i.text)].join(' '), manualWhitelistTerms.filter(t => !t.startsWith('@'))); }
+    function aiAllowed(post, data) { return isWhitelisted(post, data) || !!regexMatchAny([data.general, data.text, data.names, data.labels, ...data.images.map(i => i.text)].join(' '), allowedKeywordTerms); }
     function aiText(post, legacyKeep = false) {
         const clone = post.cloneNode(true);
         clone.querySelectorAll('[data-bcm-ui],button,[role="button"],time,a[href*="/profile/"]:not([href*="/post/"])').forEach(n => n.remove());
@@ -1995,7 +2242,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         </fieldset>
         <div class="bcm-group">
             <label for="bcm-ai-scope">Where AI runs</label>
-            <select id="bcm-ai-scope" data-bcm-draft><option value="news">News feed only (aendra.com)</option><option value="all">All home, profile, and custom feeds</option></select>
+            <select id="bcm-ai-scope" data-bcm-draft><option value="news">News feed only</option><option value="all">All home, profile, and custom feeds</option></select>
         </div>
         <div class="bcm-group">
             <div class="bcm-field-title"><h3>OpenRouter connection</h3><span class="bcm-help" id="bcm-ai-key-status" role="status"></span></div>

@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {webcrypto}=require('node:crypto');
 function load(){
- let source=fs.readFileSync(path.join(__dirname,'../reddit-advanced-content-filter-ai.user.js'),'utf8');
+ let source=fs.readFileSync(path.join(__dirname,'../reddit-advanced-content-filter.user.js'),'utf8');
  const exports='Object.assign(globalThis,{normalizeList,compileRules,matchBlock,safePostURL,...(typeof validateConfig==="function"?{validateConfig}:{}),...(typeof getPostIdentity==="function"?{getPostIdentity}:{}),...(typeof validCacheEntries==="function"?{validCacheEntries}:{})});';
  if(source.includes('\n    main();'))source=source.replace('\n    main();','\n    '+exports);
  else source=source.replace('    try {\n        const [blocklist, whitelist]', '    '+exports+' return;\n    try {\n        const [blocklist, whitelist]');
