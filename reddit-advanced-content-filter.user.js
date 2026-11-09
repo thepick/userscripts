@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Advanced Content Filter
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.04
+// @version      4.05
 // @description  Optional Liquid Ultra AI topic and picture filtering, with keyword/subreddit blocking, whitelist overrides, preview, history, and local backups.
 // @author       Stuart Saddler
 // @license      MIT
@@ -71,6 +71,7 @@
 .raf-dialog button{min-height:38px;padding:7px 11px;border:1px solid var(--raf-border);border-radius:7px;font:inherit;font-weight:600;color:var(--raf-fg);background:var(--raf-bg);cursor:pointer}
 .raf-dialog button:hover:not(:disabled){border-color:var(--raf-accent);background:var(--raf-info)}.raf-dialog button:disabled{opacity:.62;cursor:default}
 .raf-dialog button.raf-primary,.raf-dialog button.raf-primary:hover:not(:disabled){background:var(--raf-accent);color:var(--raf-on-accent);border-color:transparent;font-weight:650}
+#raf-heading:focus{outline:none}
 .raf-dialog :focus-visible{outline:2px solid var(--raf-accent);outline-offset:2px}.raf-dialog .raf-nav :focus-visible{outline-offset:-3px}.raf-dialog ::selection{background:var(--raf-accent);color:var(--raf-on-accent)}
 .raf-dialog a{color:var(--raf-accent);text-underline-offset:3px}
 .raf-row,.raf-find,.raf-pager{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.raf-find{flex-wrap:nowrap;margin-top:8px}.raf-find button,.raf-actions button{flex:none}
@@ -840,7 +841,6 @@
             <div class="raf-shell">
                 <header class="raf-head">
                     <div><p>Reddit Advanced Content Filter</p><h2 id="raf-heading" tabindex="-1">Settings</h2></div>
-                    <a href="https://github.com/thepick/userscripts/blob/main/docs/reddit-advanced-content-filter-ai/README.md" target="_blank" rel="noopener noreferrer">Setup guide</a>
                 </header>
                 <div class="raf-nav" id="raf-settings-tabs" role="tablist" aria-label="Settings sections">
                     <button id="raf-tab-filters" data-raf-tab="filters" type="button" role="tab" aria-selected="true" aria-controls="raf-panel-filters">Filters</button>

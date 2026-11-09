@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bluesky Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.05
+// @version      4.06
 // @description  Filter Bluesky by meaning with optional OpenRouter AI topics, preview and reveal controls, plus keyword, account, allowlist, and alt-text filters.
 // @author       Stuart Saddler
 // @license      MIT
@@ -87,6 +87,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 .bcm-dialog button{min-height:38px;padding:7px 11px;border:1px solid var(--bcm-border);border-radius:7px;font:inherit;font-weight:600;color:var(--bcm-fg);background:var(--bcm-bg);cursor:pointer}
 .bcm-dialog button:hover:not(:disabled){border-color:var(--bcm-accent);background:var(--bcm-info)}.bcm-dialog button:disabled{opacity:.62;cursor:default}
 .bcm-dialog button.bcm-primary,.bcm-dialog button.bcm-primary:hover:not(:disabled){background:var(--bcm-accent);color:var(--bcm-on-accent);border-color:transparent;font-weight:650}
+#bcm-title:focus{outline:none}
 .bcm-dialog :focus-visible{outline:2px solid var(--bcm-accent);outline-offset:2px}.bcm-dialog .bcm-nav :focus-visible{outline-offset:-3px}.bcm-dialog ::selection{background:var(--bcm-accent);color:var(--bcm-on-accent)}
 .bcm-dialog a{color:var(--bcm-accent);text-underline-offset:3px}
 .bcm-row,.bcm-find,.bcm-pager{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.bcm-find{flex-wrap:nowrap;margin-top:8px}.bcm-find button,.bcm-actions button{flex:none}
@@ -1069,7 +1070,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             <div class="bcm-shell">
                 <header class="bcm-head">
                     <div><p>Bluesky Content Manager</p><h2 id="bcm-title" tabindex="-1">Settings</h2></div>
-                    <a href="https://github.com/thepick/userscripts/blob/main/docs/bluesky-content-manager/README.md" target="_blank" rel="noopener noreferrer">Setup guide</a>
                 </header>
                 <div class="bcm-nav" id="bcm-settings-tabs" role="tablist" aria-label="Settings sections">
                     <button id="bcm-tab-filters" data-bcm-tab="filters" type="button" role="tab" aria-selected="true" aria-controls="bcm-panel-filters">Filters</button>
@@ -2242,7 +2242,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         </fieldset>
         <div class="bcm-group">
             <label for="bcm-ai-scope">Where AI runs</label>
-            <select id="bcm-ai-scope" data-bcm-draft><option value="news">News feed only (aendra.com)</option><option value="all">All home, profile, and custom feeds</option></select>
+            <select id="bcm-ai-scope" data-bcm-draft><option value="news">News feed only</option><option value="all">All home, profile, and custom feeds</option></select>
         </div>
         <div class="bcm-group">
             <div class="bcm-field-title"><h3>OpenRouter connection</h3><span class="bcm-help" id="bcm-ai-key-status" role="status"></span></div>
