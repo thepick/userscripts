@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Advanced Content Filter
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.01
+// @version      4.02
 // @description  Optional Liquid Ultra AI topic and picture filtering, with keyword/subreddit blocking, whitelist overrides, preview, history, and local backups.
 // @author       Stuart Saddler
 // @license      MIT
@@ -103,14 +103,112 @@
     let dialogElement = null;
     const canRemember = typeof crypto !== 'undefined' && Boolean(crypto.subtle);
 
-    function normalizeList(value) {
-        if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) throw new Error('Use a list of text entries.');
-        return [...new Set(value.map(item => item.trim().toLowerCase()).filter(Boolean))];
+    // Unified Filter Backup v1. Keep this block identical in both standalone scripts.
+    const BACKUP_FILE_BYTES = 10 * 1024 * 1024, FILTER_TEXT_BYTES = 8 * 1024 * 1024;
+    function normalizeFilterList(values, label) {
+        if (!Array.isArray(values)) throw new Error(label + ' must be a list of text entries.');
+        const result = [], seen = new Set();
+        for (const value of values) {
+            if (typeof value !== 'string') throw new Error(label + ' contains a non-text entry.');
+            const term = value.trim().toLowerCase();
+            if (/[\r\n]/.test(term)) throw new Error(label + ' entries must each fit on one line. Split multiline entries before importing.');
+            if (term.length > 10000) throw new Error(label + ' entries must be at most 10,000 characters (UTF-16 units).');
+            if (term && !seen.has(term)) {
+                seen.add(term); result.push(term);
+                if (result.length > 100000) throw new Error(label + ' must contain at most 100,000 unique entries.');
+            }
+        }
+        return result;
     }
+    function validateSharedFilters(blocklist, allowlist) {
+        const shared = { blocklist: normalizeFilterList(blocklist, 'Blocklist'), allowlist: normalizeFilterList(allowlist, 'Allowlist') };
+        const bytes = new TextEncoder().encode(shared.blocklist.join('\n')).length + new TextEncoder().encode(shared.allowlist.join('\n')).length;
+        if (bytes > FILTER_TEXT_BYTES) throw new Error('Combined normalized filter text must be at most 8 MiB of UTF-8 text.');
+        return shared;
+    }
+    function backupObject(value, label) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(label + ' must be an object.');
+    }
+    function backupFields(value, names, label) {
+        backupObject(value, label);
+        for (const key of Object.keys(value)) {
+            if (names.indexOf(key) === -1) throw new Error(label + ' contains an unsupported field: ' + key + '. Remove unknown fields and credentials before importing.');
+        }
+    }
+    function preservePlatformSettings(value) {
+        if (value === undefined) return {};
+        backupFields(value, ['bluesky', 'reddit'], 'Platforms');
+        const result = {};
+        for (const platform of Object.keys(value)) {
+            const options = value[platform], copy = {};
+            backupFields(options, platform === 'bluesky' ? ['autoWhitelistEnabled', 'altTextEnforcementEnabled', 'ai'] : ['ai'], platform + ' settings');
+            for (const key of ['autoWhitelistEnabled', 'altTextEnforcementEnabled']) {
+                if (Object.prototype.hasOwnProperty.call(options, key)) {
+                    if (typeof options[key] !== 'boolean') throw new Error(platform + ' ' + key + ' must be true or false.');
+                    copy[key] = options[key];
+                }
+            }
+            if (Object.prototype.hasOwnProperty.call(options, 'ai')) {
+                const ai = options.ai;
+                backupFields(ai, ['enabled', 'mode', 'scope', 'analyzeImages', 'topics', 'budget', 'requestLimit'], platform + ' AI settings');
+                if ((platform === 'reddit' && ai.scope !== 'all') || (platform === 'bluesky' && ['news', 'all'].indexOf(ai.scope) === -1)) throw new Error(platform + ' AI scope is invalid.');
+                // Validate with the local schema, then retain the other platform's scope.
+                copy.ai = validateAI(Object.assign({}, ai, { scope: 'all' }));
+                copy.ai.scope = ai.scope;
+            }
+            result[platform] = copy;
+        }
+        return result;
+    }
+    function mergePlatformSettings(current, incoming) {
+        const result = preservePlatformSettings(current), next = preservePlatformSettings(incoming);
+        for (const platform of Object.keys(next)) result[platform] = Object.assign({}, result[platform] || {}, next[platform]);
+        return result;
+    }
+    function parseBackup(text) {
+        if (new TextEncoder().encode(text).length > BACKUP_FILE_BYTES) throw new Error('Settings files must be at most 10 MiB.');
+        let value;
+        try { value = JSON.parse(text); } catch (error) { throw new Error('The file is not valid JSON.'); }
+        backupObject(value, 'Backup');
+        if (value.version !== 1) throw new Error('Unsupported backup version. This script supports version 1.');
+        let shared, platforms = {}, source = '';
+        if (value.format === 'unified-content-filter-backup') {
+            backupObject(value.shared, 'Shared filters');
+            shared = validateSharedFilters(value.shared.blocklist, value.shared.allowlist);
+            platforms = preservePlatformSettings(value.platforms);
+        } else if (value.format === 'bluesky-content-manager-settings') {
+            source = 'bluesky';
+            backupObject(value.settings, 'Bluesky settings');
+            shared = validateSharedFilters(value.settings.filteredTerms, value.settings.manualWhitelistTerms);
+            platforms.bluesky = {};
+            for (const key of ['autoWhitelistEnabled', 'altTextEnforcementEnabled', 'ai']) {
+                if (Object.prototype.hasOwnProperty.call(value.settings, key)) platforms.bluesky[key] = value.settings[key];
+            }
+        } else if (['reddit-advanced-content-filter-settings', 'reddit-advanced-content-filter-ai-settings'].indexOf(value.format) !== -1) {
+            source = 'reddit';
+            shared = validateSharedFilters(value.blocklist, value.whitelist);
+            platforms.reddit = {};
+            if (Object.prototype.hasOwnProperty.call(value, 'ai')) platforms.reddit.ai = value.ai;
+        } else throw new Error('Unsupported backup format. Choose a unified, Bluesky, or Reddit settings backup.');
+        return { shared, platforms: preservePlatformSettings(platforms), source };
+    }
+    function createUnifiedBackup(shared, platforms) {
+        const value = { format: 'unified-content-filter-backup', version: 1, exportedAt: new Date().toISOString(), shared: validateSharedFilters(shared.blocklist, shared.allowlist), platforms: preservePlatformSettings(platforms) };
+        if (new TextEncoder().encode(JSON.stringify(value)).length > BACKUP_FILE_BYTES) throw new Error('The JSON backup exceeds 10 MiB. Shorten the lists before exporting.');
+        return value;
+    }
+    // End Unified Filter Backup v1.
 
+    function normalizeList(values) { return normalizeFilterList(values, 'Filter list'); }
+    function exportBackup(value) {
+        const platforms = preservePlatformSettings(value.backupPlatforms);
+        platforms.reddit = { ai: value.ai };
+        return createUnifiedBackup({ blocklist: value.blocklist, allowlist: value.whitelist }, platforms);
+    }
     function validateConfig(value) {
         if (!value || typeof value !== 'object') throw new Error('The settings are not a valid object.');
-        return { blocklist: normalizeList(value.blocklist), whitelist: normalizeList(value.whitelist), ai: validateAI(value.ai) };
+        const shared = validateSharedFilters(value.blocklist, value.whitelist);
+        return { blocklist: shared.blocklist, whitelist: shared.allowlist, ai: validateAI(value.ai), backupPlatforms: preservePlatformSettings(value.backupPlatforms) };
     }
 
     function reportIssue(key, message) {
@@ -129,12 +227,14 @@
         let snapshot = yield GM.getValue(settingsKey, null);
         const originalSettings = snapshot === null;
         if (originalSettings) snapshot = yield GM.getValue('rafSettingsV1', null);
-        const config = { blocklist: blocklistArr, whitelist: whitelistArr, ai: settings.ai }, warnings = [];
+        const config = { blocklist: blocklistArr, whitelist: whitelistArr, ai: settings.ai, backupPlatforms: settings.backupPlatforms || {} }, warnings = [];
         if (snapshot !== null) {
             if (!snapshot || snapshot.version !== 1) {
                 warnings.push('Saved settings are invalid. Their original data has not been overwritten. Restore a backup or correct the lists before saving.');
                 return Object.assign(config, { revision: 'invalid:' + JSON.stringify(snapshot), warnings });
             }
+            try { config.backupPlatforms = preservePlatformSettings(snapshot.backupPlatforms); }
+            catch (error) { warnings.push('Retained platform settings are invalid. Your active filters were recovered; export a backup before saving to repair this record.'); }
             const revision = (originalSettings ? 'original:' : '') +
                 (typeof snapshot.revision === 'string' ? snapshot.revision : 'invalid:' + JSON.stringify(snapshot));
             if (typeof snapshot.revision !== 'string') warnings.push('The saved settings record needs repair. Available lists were recovered; export a backup, then save to repair the record.');
@@ -143,6 +243,8 @@
                 catch (e) { warnings.push('The saved ' + key + ' is invalid. Other settings were recovered; correct this list before saving.'); }
             }
             try { config.ai = validateAI(originalSettings ? undefined : snapshot.ai); } catch (e) { config.ai = validateAI(); warnings.push('Saved AI settings are invalid. AI is off; review and save them again.'); }
+            try { validateSharedFilters(config.blocklist, config.whitelist); }
+            catch (error) { config.blocklist = blocklistArr; config.whitelist = whitelistArr; warnings.push(error.message + ' Saved data was not overwritten; the last valid filters were kept.'); }
             return Object.assign(config, { revision, warnings });
         }
         const legacy = yield Promise.all([GM.getValue('blocklist', []), GM.getValue('whitelist', [])]);
@@ -150,7 +252,9 @@
             try { config[key] = normalizeList(legacy[index]); }
             catch (e) { warnings.push('The saved ' + key + ' is invalid. Its original data has not been overwritten. Restore a backup or correct this list before saving.'); }
         }
-        return Object.assign(config, { revision: 'legacy:' + JSON.stringify(legacy), warnings });
+        try { validateSharedFilters(config.blocklist, config.whitelist); }
+            catch (error) { config.blocklist = blocklistArr; config.whitelist = whitelistArr; warnings.push(error.message + ' Saved data was not overwritten; the last valid filters were kept.'); }
+            return Object.assign(config, { revision: 'legacy:' + JSON.stringify(legacy), warnings });
     });
 
     const fingerprint = runAsync(function* (value) {
@@ -186,7 +290,7 @@
                     else clearIssue('settings');
                     if (value.revision !== settingsRevision) {
                         settingsRevision = value.revision;
-                        settings.ai=value.ai;
+                        settings.ai=value.ai; settings.backupPlatforms=value.backupPlatforms;
                         yield setRules(value.blocklist, value.whitelist);
                         if (epoch !== configurationEpoch) { refreshAgain = true; continue; }
                         if (document.body) collectPosts(document.body);
@@ -505,8 +609,47 @@
         return value.replace(phraseSeparators, ' ');
     }
 
+    // A conservative candidate index; the existing matcher still decides every match.
+    function indexText(text) { return text.toUpperCase().toLowerCase().replace(/\u03c2/g, '\u03c3'); }
+    function buildMatchIndex(entries) {
+        const index = new Map();
+        index.needles = [];
+        entries.forEach((term, position) => {
+            let entry = foldText(term).trim();
+            if (!entry) return;
+            const variants = [phraseText(entry)];
+            if (/^[a-z]+$/.test(entry)) {
+                if (/[^aeiou]y$/.test(entry)) variants.push(entry.slice(0, -1) + 'ies');
+                else if (/(s|x|z|ch|sh)$/.test(entry)) variants.push(entry + 'es');
+                else variants.push(entry + 's');
+            }
+            index.needles[position] = variants.map(indexText);
+            if (/^[a-z]+$/.test(entry) && /[^aeiou]y$/.test(entry)) entry = entry.slice(0, -1);
+            const key = indexText(phraseText(entry)).slice(0, 3);
+            if (!index.has(key)) index.set(key, []);
+            index.get(key).push(position);
+        });
+        return index;
+    }
+    function matchCandidates(text, phrases, index) {
+        const found = new Set(), visited = new Set();
+        for (const value of [indexText(text), indexText(phrases)]) {
+            for (let start = 0; start < value.length; start++) {
+                for (let length = 1; length <= 3 && start + length <= value.length; length++) {
+                    const key = value.slice(start, start + length);
+                    if (visited.has(key)) continue;
+                    visited.add(key);
+                    const positions = index.get(key);
+                    if (positions) for (const position of positions) found.add(position);
+                }
+            }
+        }
+        const searchable = indexText(text), searchablePhrases = indexText(phrases);
+        return Array.from(found).filter(position => index.needles[position].some(needle => searchable.indexOf(needle) !== -1 || searchablePhrases.indexOf(needle) !== -1)).sort((a, b) => a - b);
+    }
     function compileRules(entries) {
-        return entries.map(entry => foldText(entry).trim()).filter(Boolean).map(entry => {
+        const normalized = entries.map(entry => foldText(entry).trim()).filter(Boolean);
+        const rules = normalized.map(entry => {
             if (/\s/.test(entry)) return { phrase: entry, normalizedPhrase: phraseText(entry) };
             const variants = [entry];
             // shortcut: regular English plurals only; enter irregular forms separately.
@@ -515,18 +658,21 @@
                 else if (/(s|x|z|ch|sh)$/.test(entry)) variants.push(entry + 'es');
                 else variants.push(entry + 's');
             }
-            return { regex: new RegExp('(^|[^\\p{L}\\p{N}_])(' +
-                variants.map(escapeRegex).join('|') + ')(?=$|[^\\p{L}\\p{N}_])', 'iu') };
+            return { source: '(^|[^\\p{L}\\p{N}_])(' + variants.map(escapeRegex).join('|') + ')(?=$|[^\\p{L}\\p{N}_])' };
         });
+        rules.index = buildMatchIndex(normalized);
+        return rules;
     }
 
     function matchBlock(text, rules) {
         text = foldText(text);
         const phrases = phraseText(text);
-        for (const rule of rules) {
+        for (const position of matchCandidates(text, phrases, rules.index || new Map())) {
+            const rule = rules[position];
             if (rule.phrase !== undefined) {
                 if (text.includes(rule.phrase) || phrases.includes(rule.normalizedPhrase)) return rule.phrase;
             } else {
+                if (!rule.regex) rule.regex = new RegExp(rule.source, 'iu');
                 const match = rule.regex.exec(text);
                 if (match) return match[2];
             }
@@ -666,12 +812,13 @@
         const find = id => dialog.querySelector('#' + id), blockInput = find('raf-blocklist'), whiteInput = find('raf-whitelist');
         blockInput.value = blocklistArr.join('\n'); whiteInput.value = whitelistArr.join('\n');
         let baseRevision = settingsRevision, page = 0, saving = false, dirty = false, previewTimer = null;
+        let draftPlatforms = preservePlatformSettings(settings.backupPlatforms);
         let previewSignature = '', previewBlock = [], previewWhite = [];
         const body = dialog.querySelector('.raf-body');
         const selectTab = setupTabs(find('raf-settings-tabs'), () => { body.scrollTop = 0; });
         setupTabs(find('raf-history-tabs'));
         const draftAI = mountAISettings(dialog, beginOperation, endOperation, status);
-        const draft = () => validateConfig({ blocklist: blockInput.value.split('\n'), whitelist: whiteInput.value.split('\n'), ai:draftAI() });
+        const draft = () => validateConfig({ blocklist: blockInput.value.split('\n'), whitelist: whiteInput.value.split('\n'), ai:draftAI(), backupPlatforms:draftPlatforms });
         function status(message, error = false) { find('raf-save-status').textContent = message; find('raf-save-status').dataset.error = String(error); }
 
         function setupTabs(tabList, onChange) {
@@ -840,9 +987,9 @@
         }));
         find('raf-export').addEventListener('click', () => {
             try {
-                const value = Object.assign({ format: 'reddit-advanced-content-filter-ai-settings', version: 1 }, draft());
-                const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })), link = uiNode('a');
-                link.href = url; link.download = 'reddit-filter-ai-settings.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+                const value = exportBackup(draft());
+                const url = URL.createObjectURL(new Blob([JSON.stringify(value)], { type: 'application/json' })), link = uiNode('a');
+                link.href = url; link.download = 'content-filter-backup.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
                 status('Settings exported with your current draft.');
             } catch (error) { status('Could not export. ' + error.message, true); }
         });
@@ -852,15 +999,18 @@
             const states = beginOperation('Reading settings backup...'); if (!states) return;
             let loaded = false;
             try {
-                if (file.size > 2 * 1024 * 1024) throw new Error('Choose a settings file smaller than 2 MB.');
-                const value = JSON.parse((yield file.text()));
+                if (file.size > BACKUP_FILE_BYTES) throw new Error('Settings files must be at most 10 MiB.');
+                const backup = parseBackup(yield file.text());
                 if (dialogElement !== dialog) return;
-                if (!['reddit-advanced-content-filter-settings','reddit-advanced-content-filter-ai-settings'].includes(value.format) || value.version !== 1) throw new Error('Choose a Reddit Filter settings backup.');
-                const imported = validateConfig(value);
-                blockInput.value = imported.blocklist.join('\n'); whiteInput.value = imported.whitelist.join('\n');if(value.ai)applyAIDraft(dialog,imported.ai);
+                const options = backup.platforms.reddit || {};
+                const platforms = mergePlatformSettings(draftPlatforms, backup.platforms);
+                if (dirty && !window.confirm('Replace your unsaved draft with this backup?')) return;
+                blockInput.value = backup.shared.blocklist.join('\n'); whiteInput.value = backup.shared.allowlist.join('\n');
+                if (options.ai) applyAIDraft(dialog, options.ai);
+                draftPlatforms = platforms;
                 loaded = dirty = true;
                 renderPreview();
-                status('Backup loaded. Review Filters and AI filtering, then choose Save changes.');
+                status(backup.shared.blocklist.length.toLocaleString() + ' blocked and ' + backup.shared.allowlist.length.toLocaleString() + ' allowed entries loaded. ' + (backup.source && backup.source !== 'reddit' ? 'Only shared lists apply here; other-platform preferences are retained for export. ' : '') + 'Review, then choose Save changes.');
             } catch (error) { status('Import failed. ' + error.message + ' Your lists were kept.', true); }
             finally { event.target.value = ''; endOperation(states); }
             if (loaded && dialogElement === dialog) selectTab(find('raf-tab-filters'), true);
@@ -889,10 +1039,12 @@
                 if (current.revision !== baseRevision) throw new Error('Settings changed in another tab. Export these edits, then close and reopen before saving.');
                 status('Saving changes...');
                 const revision = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16).padStart(8, '0')).join('');
-                yield GM.setValue(settingsKey, Object.assign({ version: 1, revision }, value));
+                const snapshot = Object.assign({ version: 1, revision }, value);
+                yield GM.setValue(settingsKey, snapshot);
+                if (JSON.stringify(yield GM.getValue(settingsKey, null)) !== JSON.stringify(snapshot)) throw new Error('Storage verification failed. Export your draft and retry; saved data may be incomplete.');
                 configurationEpoch++;
                 settingsRevision = baseRevision = revision;
-                settings.ai=value.ai;
+                settings.ai=value.ai; settings.backupPlatforms=value.backupPlatforms;
                 yield setRules(value.blocklist, value.whitelist);
                 clearIssue('settings'); clearIssue('load'); collectPosts(document.body);
                 dirty = false;

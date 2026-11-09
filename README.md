@@ -27,6 +27,10 @@ The initial imports preserved the Greasy Fork downloads exactly, including their
 | Gmail Clear Conversations | 0.4.1 | [gmail-clear-conversations.user.js](gmail-clear-conversations.user.js) | [Listing](https://greasyfork.org/en/scripts/602917) |
 | Reddit Multi-Column Robust (unlisted) | 2026.11.2.2 | [reddit-multi-column-robust.user.js](reddit-multi-column-robust.user.js) | [Listing](https://greasyfork.org/en/scripts/603358) |
 
+## Shared filter backups
+
+Bluesky 4.03 and Reddit 4.02 support one shared blocklist/allowlist backup with separate platform settings. See the [format, compatibility, limits, and validation results](docs/unified-filter-backup.md). The 100,000-entry ceiling remains provisional while editor performance is evaluated.
+
 ## AI filtering
 
 The Reddit and Bluesky AI filters use Liquid Ultra for topic filtering and Gemini 2.5 Flash-Lite for optional picture scanning, with Preview/Hide actions and review history. They retain the original filters and whitelist overrides. New installations start with AI disabled; configure your own OpenRouter key and topics. Keys stay in userscript-manager storage and are excluded from settings exports.

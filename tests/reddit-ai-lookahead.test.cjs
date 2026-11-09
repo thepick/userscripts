@@ -7,7 +7,7 @@ function card(top,id='post',extra={}){
   return {id,isConnected:true,getBoundingClientRect:()=>({top,bottom:top+200,left:0,right:300}),getClientRects:()=>[{}],closest:()=>null,...extra};
 }
 function load(){
-  const source=fs.readFileSync(path.join(__dirname,'../reddit-advanced-content-filter-ai.user.js'),'utf8');
+  const source=fs.readFileSync(path.join(__dirname,'../reddit-advanced-content-filter.user.js'),'utf8');
   const requests=[],observers=[],events=new Map();
   const c={console,URL,TextEncoder,crypto:webcrypto,performance,Date,ArrayBuffer,Uint8Array,btoa:s=>Buffer.from(s,'binary').toString('base64'),innerHeight:1000,innerWidth:1200,
     setTimeout:()=>1,clearTimeout(){},setInterval(){},location:{hostname:'www.reddit.com',pathname:'/',protocol:'https:'},
@@ -34,7 +34,7 @@ function load(){
     setPaused(hidden,open){document.hidden=hidden;dialogElement={open};},
     reobserve(){collectPosts=()=>{for(const post of testPosts)watchAIPost(post);};startAI();},
     watchCount:()=>aiWatched.size});`;
-  vm.createContext(c);vm.runInContext(source.replace('\n    main();',expose),c);c.setup();
+  vm.createContext(c);vm.runInContext(source.replace(/const (reserveAI|settleAI|settleAIPacing|cacheAI|collectPosts|keptAI|aiImageData|fingerprint)\b/g,'let $1').replace('\n    main();',expose),c);c.setup();
   return {c,requests,observers,events};
 }
 async function queue(c,post){await c.scheduleAI(post,{title:'Election '+post.id,content:'Political news',subreddit:'news',identity:{id:post.id},url:'https://www.reddit.com/comments/'+post.id+'/'},1);}

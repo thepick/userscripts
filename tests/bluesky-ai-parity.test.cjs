@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),{webcrypto}=require('node:crypto');
 function load(){
- const original=fs.readFileSync(path.join(__dirname,'../bluesky-content-manager-ai.user.js'),'utf8'),values=new Map(),events=new Map();
+ const original=fs.readFileSync(path.join(__dirname,'../bluesky-content-manager.user.js'),'utf8'),values=new Map(),events=new Map();
  const expose=String.raw`Object.assign(globalThis,{regexMatchAny,termToRegex,getPostData,aiText,aiImages,aiImageURL,aiScope,aiValid,renderAI,resetAI,scheduleAI,drainAI,isAIVisible,watchAIPost,reserveAI,AI_PACING,readAIUsage,
  settingsValue:()=>settings,enableAltRule(){altTextEnforcementEnabled=true;},decidePost,
  keys:async function(data){settings.ai={...aiDefaults,enabled:true,scope:'all',topics:['Politics']};aiKey='dummy';currentUserDid='did:plc:test';aiText=()=> 'same bounded excerpt with enough text';aiImages=()=>[];aiScope=()=>true;aiAllowed=()=>false;aiEnvironment=()=> 'feed';aiValid=()=>true;watchAIPost=()=>{};isAIVisible=()=>false;keptAI=async()=>false;const inputs=[];digest=async value=>{inputs.push(value);return 'a'.repeat(64)};await scheduleAI({},data,decisionContext);return inputs;},
@@ -11,7 +11,7 @@ function load(){
  async queueProbe(post){settings.ai={...aiDefaults,enabled:true,topics:['Politics']};aiBusy=true;aiKey='dummy';aiText=()=> 'An election headline long enough for checking';aiImages=()=>[];aiScope=()=>true;aiAllowed=()=>false;aiEnvironment=()=> 'feed';aiValid=()=>true;await scheduleAI(post,{identity:{url:'https://bsky.app/profile/test/post/abc'}},decisionContext);}
  });`;
  const c={console,URL,TextEncoder,crypto:webcrypto,performance,Date,innerHeight:1000,innerWidth:1200,NodeFilter:{SHOW_TEXT:4},setTimeout:()=>1,clearTimeout(){},setInterval(){},cancelAnimationFrame(){},GM_addStyle(){},GM_getValue:(k,d)=>values.has(k)?values.get(k):d,GM_setValue:(k,v)=>values.set(k,v),navigator:{locks:{request:async(_n,fn)=>fn()}},window:{addEventListener:(type,fn)=>events.set(type,fn)},document:{body:{},querySelector:()=>null,addEventListener(){},createTreeWalker:()=>({nextNode:()=>null})},location:{origin:'https://bsky.app',pathname:'/',search:''},sessionStorage:{getItem:()=>null},localStorage:{getItem:()=>null}};
- vm.createContext(c);vm.runInContext(original.replace(/\nmain\(\);\s*\n/,'\n'+expose+'\n'),c);return {c,values,events,original};
+ vm.createContext(c);vm.runInContext(original.replace(/\n\s*main\(\);\s*\n/,'\n'+expose+'\n'),c);return {c,values,events,original};
 }
 function node(tag='IMG',attrs={},extra={}){return {nodeType:1,tagName:tag,classList:{contains:()=>false},alt:attrs.alt||'',naturalWidth:640,naturalHeight:480,width:0,height:0,currentSrc:'',getAttribute:k=>attrs[k]??null,closest:()=>null,matches:()=>false,querySelector:()=>null,...extra};}
 function post(nodes=[],text='A neutral article'){return {isConnected:true,cloneNode:()=>({textContent:text,querySelectorAll:()=>[]}),querySelectorAll(selector){if(selector==='img')return nodes.filter(n=>n.tagName==='IMG');if(selector==='video[poster]')return nodes.filter(n=>n.tagName==='VIDEO');return nodes;},querySelector:()=>null,matches:()=>false,getAttribute:()=>null};}
@@ -72,7 +72,7 @@ test('Bluesky retains its single-origin budget rather than Reddit split accounti
 test('preview Hide survives a rescan and stale preview actions cannot hide changed posts',()=>{
  const {c}=load();c.valid=true;c.enqueued=0;c.makeElement=(tag,text)=>({tag,text,dataset:{},children:[],setAttribute(){},append(...v){this.children.push(...v)},addEventListener(type,fn){this[type]=fn},remove(){this.isConnected=false}});
  c.rendering();const p=card(0),classes=new Set();p.classList={contains:v=>classes.has(v),add:v=>classes.add(v),remove:v=>classes.delete(v),toggle:(v,on)=>on?classes.add(v):classes.delete(v)};p.prepend=panel=>{panel.isConnected=true;p.panel=panel};
- const job={post:p,key:'key',keepKey:'keep',url:'url',topics:['Politics']},result={decision:'hide',evidence:'match'};c.renderAI(job,result);p.panel.children[1].click({preventDefault(){},stopPropagation(){}});c.resetAI();c.renderAI(job,result);assert(classes.has('bcmai-ai-hidden'));
- c.resetAI();c.valid=true;c.renderAI({...job,key:'newkey',keepKey:'newkeep'},result);c.valid=false;p.panel.children[1].click({preventDefault(){},stopPropagation(){}});assert(!classes.has('bcmai-ai-hidden'));assert.equal(c.enqueued,1);
+ const job={post:p,key:'key',keepKey:'keep',url:'url',topics:['Politics']},result={decision:'hide',evidence:'match'};c.renderAI(job,result);p.panel.children[1].click({preventDefault(){},stopPropagation(){}});c.resetAI();c.renderAI(job,result);assert(classes.has('bcm-ai-hidden'));
+ c.resetAI();c.valid=true;c.renderAI({...job,key:'newkey',keepKey:'newkeep'},result);c.valid=false;p.panel.children[1].click({preventDefault(){},stopPropagation(){}});assert(!classes.has('bcm-ai-hidden'));assert.equal(c.enqueued,1);
 });
 

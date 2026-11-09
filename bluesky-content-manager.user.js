@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bluesky Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.02
+// @version      4.03
 // @description  Filter Bluesky by meaning with optional OpenRouter AI topics, preview and reveal controls, plus keyword, account, allowlist, and alt-text filters.
 // @author       Stuart Saddler
 // @license      MIT
@@ -112,17 +112,113 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     GM_addStyle(`.bcm-ai-hidden{display:none!important}html .bcm-load-paused{position:fixed!important;top:calc(100vh + 96px)!important;left:0!important;transform:none!important}.bcm-ai-panel{box-sizing:border-box;margin:8px;padding:12px;background:#eaf4ff;color:#172b3a;border:1px solid #718899;border-radius:6px;font:14px/1.5 system-ui;overflow-wrap:anywhere}.bcm-ai-panel button{margin:6px 8px 0 0;min-height:40px;padding:8px;background:#fff;color:#172b3a;border:1px solid #718899;border-radius:6px;font:inherit;cursor:pointer}.bcm-ai-panel button:focus-visible{outline:3px solid #0067b4;outline-offset:2px}@media(prefers-color-scheme:dark){.bcm-ai-panel{background:#1e3040;color:#edf4f9}.bcm-ai-panel button{background:#15202b;color:#edf4f9}}`);
     /*** SETTINGS & MATCHING ***/
     function normalizeUsername(value) { return value.toLowerCase().replace(/[\u200B-\u200F\u202A-\u202F]/g, '').trim(); }
-    function normalizeTerms(values) {
-        if (!Array.isArray(values) || values.some(value => typeof value !== 'string'))
-            throw new Error('Use a list of text entries.');
-        if (values.length > 50000 || values.some(value => value.length > 5000))
-            throw new Error('The list is too large. Use fewer or shorter entries.');
-        return [...new Set(values.map(value => value.trim().toLowerCase()).filter(Boolean))];
+    // Unified Filter Backup v1. Keep this block identical in both standalone scripts.
+    const BACKUP_FILE_BYTES = 10 * 1024 * 1024, FILTER_TEXT_BYTES = 8 * 1024 * 1024;
+    function normalizeFilterList(values, label) {
+        if (!Array.isArray(values)) throw new Error(label + ' must be a list of text entries.');
+        const result = [], seen = new Set();
+        for (const value of values) {
+            if (typeof value !== 'string') throw new Error(label + ' contains a non-text entry.');
+            const term = value.trim().toLowerCase();
+            if (/[\r\n]/.test(term)) throw new Error(label + ' entries must each fit on one line. Split multiline entries before importing.');
+            if (term.length > 10000) throw new Error(label + ' entries must be at most 10,000 characters (UTF-16 units).');
+            if (term && !seen.has(term)) {
+                seen.add(term); result.push(term);
+                if (result.length > 100000) throw new Error(label + ' must contain at most 100,000 unique entries.');
+            }
+        }
+        return result;
+    }
+    function validateSharedFilters(blocklist, allowlist) {
+        const shared = { blocklist: normalizeFilterList(blocklist, 'Blocklist'), allowlist: normalizeFilterList(allowlist, 'Allowlist') };
+        const bytes = new TextEncoder().encode(shared.blocklist.join('\n')).length + new TextEncoder().encode(shared.allowlist.join('\n')).length;
+        if (bytes > FILTER_TEXT_BYTES) throw new Error('Combined normalized filter text must be at most 8 MiB of UTF-8 text.');
+        return shared;
+    }
+    function backupObject(value, label) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(label + ' must be an object.');
+    }
+    function backupFields(value, names, label) {
+        backupObject(value, label);
+        for (const key of Object.keys(value)) {
+            if (names.indexOf(key) === -1) throw new Error(label + ' contains an unsupported field: ' + key + '. Remove unknown fields and credentials before importing.');
+        }
+    }
+    function preservePlatformSettings(value) {
+        if (value === undefined) return {};
+        backupFields(value, ['bluesky', 'reddit'], 'Platforms');
+        const result = {};
+        for (const platform of Object.keys(value)) {
+            const options = value[platform], copy = {};
+            backupFields(options, platform === 'bluesky' ? ['autoWhitelistEnabled', 'altTextEnforcementEnabled', 'ai'] : ['ai'], platform + ' settings');
+            for (const key of ['autoWhitelistEnabled', 'altTextEnforcementEnabled']) {
+                if (Object.prototype.hasOwnProperty.call(options, key)) {
+                    if (typeof options[key] !== 'boolean') throw new Error(platform + ' ' + key + ' must be true or false.');
+                    copy[key] = options[key];
+                }
+            }
+            if (Object.prototype.hasOwnProperty.call(options, 'ai')) {
+                const ai = options.ai;
+                backupFields(ai, ['enabled', 'mode', 'scope', 'analyzeImages', 'topics', 'budget', 'requestLimit'], platform + ' AI settings');
+                if ((platform === 'reddit' && ai.scope !== 'all') || (platform === 'bluesky' && ['news', 'all'].indexOf(ai.scope) === -1)) throw new Error(platform + ' AI scope is invalid.');
+                // Validate with the local schema, then retain the other platform's scope.
+                copy.ai = validateAI(Object.assign({}, ai, { scope: 'all' }));
+                copy.ai.scope = ai.scope;
+            }
+            result[platform] = copy;
+        }
+        return result;
+    }
+    function mergePlatformSettings(current, incoming) {
+        const result = preservePlatformSettings(current), next = preservePlatformSettings(incoming);
+        for (const platform of Object.keys(next)) result[platform] = Object.assign({}, result[platform] || {}, next[platform]);
+        return result;
+    }
+    function parseBackup(text) {
+        if (new TextEncoder().encode(text).length > BACKUP_FILE_BYTES) throw new Error('Settings files must be at most 10 MiB.');
+        let value;
+        try { value = JSON.parse(text); } catch (error) { throw new Error('The file is not valid JSON.'); }
+        backupObject(value, 'Backup');
+        if (value.version !== 1) throw new Error('Unsupported backup version. This script supports version 1.');
+        let shared, platforms = {}, source = '';
+        if (value.format === 'unified-content-filter-backup') {
+            backupObject(value.shared, 'Shared filters');
+            shared = validateSharedFilters(value.shared.blocklist, value.shared.allowlist);
+            platforms = preservePlatformSettings(value.platforms);
+        } else if (value.format === 'bluesky-content-manager-settings') {
+            source = 'bluesky';
+            backupObject(value.settings, 'Bluesky settings');
+            shared = validateSharedFilters(value.settings.filteredTerms, value.settings.manualWhitelistTerms);
+            platforms.bluesky = {};
+            for (const key of ['autoWhitelistEnabled', 'altTextEnforcementEnabled', 'ai']) {
+                if (Object.prototype.hasOwnProperty.call(value.settings, key)) platforms.bluesky[key] = value.settings[key];
+            }
+        } else if (['reddit-advanced-content-filter-settings', 'reddit-advanced-content-filter-ai-settings'].indexOf(value.format) !== -1) {
+            source = 'reddit';
+            shared = validateSharedFilters(value.blocklist, value.whitelist);
+            platforms.reddit = {};
+            if (Object.prototype.hasOwnProperty.call(value, 'ai')) platforms.reddit.ai = value.ai;
+        } else throw new Error('Unsupported backup format. Choose a unified, Bluesky, or Reddit settings backup.');
+        return { shared, platforms: preservePlatformSettings(platforms), source };
+    }
+    function createUnifiedBackup(shared, platforms) {
+        const value = { format: 'unified-content-filter-backup', version: 1, exportedAt: new Date().toISOString(), shared: validateSharedFilters(shared.blocklist, shared.allowlist), platforms: preservePlatformSettings(platforms) };
+        if (new TextEncoder().encode(JSON.stringify(value)).length > BACKUP_FILE_BYTES) throw new Error('The JSON backup exceeds 10 MiB. Shorten the lists before exporting.');
+        return value;
+    }
+    // End Unified Filter Backup v1.
+
+    function normalizeTerms(values) { return normalizeFilterList(values, 'Filter list'); }
+    function exportBackup(value) {
+        const platforms = preservePlatformSettings(value.backupPlatforms);
+        platforms.bluesky = { ai: value.ai, autoWhitelistEnabled: value.autoWhitelistEnabled, altTextEnforcementEnabled: value.altTextEnforcementEnabled };
+        return createUnifiedBackup({ blocklist: value.filteredTerms, allowlist: value.manualWhitelistTerms }, platforms);
     }
     function validateSettings(value) {
         if (!value || typeof value !== 'object' || typeof value.autoWhitelistEnabled !== 'boolean' || typeof value.altTextEnforcementEnabled !== 'boolean')
             throw new Error('The settings file has invalid options.');
-        return { filteredTerms: normalizeTerms(value.filteredTerms), manualWhitelistTerms: normalizeTerms(value.manualWhitelistTerms), autoWhitelistEnabled: value.autoWhitelistEnabled, altTextEnforcementEnabled: value.altTextEnforcementEnabled, ai: validateAI(value.ai) };
+        const shared = validateSharedFilters(value.filteredTerms, value.manualWhitelistTerms);
+        return { filteredTerms: shared.blocklist, manualWhitelistTerms: shared.allowlist, autoWhitelistEnabled: value.autoWhitelistEnabled, altTextEnforcementEnabled: value.altTextEnforcementEnabled, ai: validateAI(value.ai), backupPlatforms: preservePlatformSettings(value.backupPlatforms) };
     }
     function reportIssue(key, message) { issues.set(key, message); scheduleMenu(); updateDialogStatus(); }
     function clearIssue(key) { if (issues.delete(key))
@@ -151,6 +247,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                 if (parsed.version !== 1 || !parsed.settings || typeof parsed.settings !== 'object')
                     throw new Error();
                 const value = Object.assign({}, settings);
+                try { value.backupPlatforms = preservePlatformSettings(parsed.settings.backupPlatforms); }
+                catch (error) { value.backupPlatforms = settings.backupPlatforms || {}; reportIssue('backup-platforms', 'Retained platform settings are invalid. Your active filters were recovered; export a backup before saving to repair this record.'); }
                 try {
                     value.ai = validateAI(parsed.settings.ai);
                 }
@@ -172,6 +270,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                         reportIssue(key, `The saved ${SETTING_LABELS[key]} field is invalid. Other settings were recovered; its last valid value was kept. Export a backup before correcting it.`);
                     }
                 }
+                try { validateSharedFilters(value.filteredTerms, value.manualWhitelistTerms); }
+                catch (error) { value.filteredTerms = settings.filteredTerms; value.manualWhitelistTerms = settings.manualWhitelistTerms; reportIssue('settings', error.message + ' Saved data was not overwritten; the last valid filters were kept.'); }
                 return { value, raw };
             }
             catch (e) {
@@ -205,7 +305,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         catch (e) {
             reportIssue('whitelistedUsers', 'Some legacy allowed accounts could not be read. Their original data has not been overwritten.');
         }
-        return { value, raw };
+        try { validateSharedFilters(value.filteredTerms, value.manualWhitelistTerms); }
+                catch (error) { value.filteredTerms = settings.filteredTerms; value.manualWhitelistTerms = settings.manualWhitelistTerms; reportIssue('settings', error.message + ' Saved data was not overwritten; the last valid filters were kept.'); }
+                return { value, raw };
     }
     function initializeSettings() { const loaded = readSettings(); settingsRaw = loaded.raw; installSettings(loaded.value); settingsLoaded = true; }
     function installSettings(value) {
@@ -218,14 +320,58 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         resetAI();
         ({ filteredTerms, manualWhitelistTerms, autoWhitelistEnabled, altTextEnforcementEnabled } = settings);
         patterns.clear();
-        for (const term of filteredTerms.concat(manualWhitelistTerms))
-            termToRegex(term);
+        allowedKeywordTerms = manualWhitelistTerms.filter(term => !term.startsWith('@'));
+        compileTerms(filteredTerms); compileTerms(allowedKeywordTerms);
     }
     function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
     function foldText(value) { return value.normalize('NFKC').replace(/[\u00AD\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '').toLowerCase(); }
     const phraseSeparators = new RegExp('[\\s\\p{Pd}_]+', 'gu');
     function phraseText(value) { return value.replace(phraseSeparators, ' '); }
     function cleanText(value) { return phraseText(foldText(value)).trim(); }
+    // A conservative candidate index; the existing matcher still decides every match.
+    function indexText(text) { return text.toUpperCase().toLowerCase().replace(/\u03c2/g, '\u03c3'); }
+    function buildMatchIndex(entries) {
+        const index = new Map();
+        index.needles = [];
+        entries.forEach((term, position) => {
+            let entry = foldText(term).trim();
+            if (!entry) return;
+            const variants = [phraseText(entry)];
+            if (/^[a-z]+$/.test(entry)) {
+                if (/[^aeiou]y$/.test(entry)) variants.push(entry.slice(0, -1) + 'ies');
+                else if (/(s|x|z|ch|sh)$/.test(entry)) variants.push(entry + 'es');
+                else variants.push(entry + 's');
+            }
+            index.needles[position] = variants.map(indexText);
+            if (/^[a-z]+$/.test(entry) && /[^aeiou]y$/.test(entry)) entry = entry.slice(0, -1);
+            const key = indexText(phraseText(entry)).slice(0, 3);
+            if (!index.has(key)) index.set(key, []);
+            index.get(key).push(position);
+        });
+        return index;
+    }
+    function matchCandidates(text, phrases, index) {
+        const found = new Set(), visited = new Set();
+        for (const value of [indexText(text), indexText(phrases)]) {
+            for (let start = 0; start < value.length; start++) {
+                for (let length = 1; length <= 3 && start + length <= value.length; length++) {
+                    const key = value.slice(start, start + length);
+                    if (visited.has(key)) continue;
+                    visited.add(key);
+                    const positions = index.get(key);
+                    if (positions) for (const position of positions) found.add(position);
+                }
+            }
+        }
+        const searchable = indexText(text), searchablePhrases = indexText(phrases);
+        return Array.from(found).filter(position => index.needles[position].some(needle => searchable.indexOf(needle) !== -1 || searchablePhrases.indexOf(needle) !== -1)).sort((a, b) => a - b);
+    }
+    const matchIndexes = new WeakMap();
+    let allowedKeywordTerms = [];
+    function compileTerms(terms) {
+        if (!matchIndexes.has(terms)) matchIndexes.set(terms, buildMatchIndex(terms));
+        return terms;
+    }
     function termToRegex(term) {
         if (!term || typeof term !== 'string')
             return null;
@@ -254,7 +400,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         if (!text || !terms.length)
             return null;
         const folded = foldText(text), phrases = phraseText(folded);
-        for (const term of terms) {
+        compileTerms(terms);
+        for (const position of matchCandidates(folded, phrases, matchIndexes.get(terms))) {
+            const term = terms[position];
             const re = termToRegex(term);
             if (re && re.test(/\s/.test(foldText(term).trim()) ? phrases : folded))
                 return term;
@@ -457,7 +605,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         if (isWhitelisted(post, data))
             return null;
         const combined = [data.general, data.text, data.names, data.labels, ...data.images.map(img => img.text)].join(' ');
-        if (regexMatchAny(combined, manualWhitelistTerms.filter(term => !term.startsWith('@'))))
+        if (regexMatchAny(combined, allowedKeywordTerms))
             return null;
         if (altTextEnforcementEnabled && data.images.some(img => img.required && !img.alt.trim()))
             return { reason: 'Alt-text enforcement', keyword: 'missing alt-text' };
@@ -898,6 +1046,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             </div>`;
         const find = id => dialog.querySelector('#' + id);
         let dirty = false, saving = false, page = 0, baseRaw = settingsRaw;
+        let draftPlatforms = preservePlatformSettings(settings.backupPlatforms);
         const errorDetails = find('bcm-errors');
         const selectTab = setupTabs(find('bcm-settings-tabs'), () => { dialog.querySelector('.bcm-body').scrollTop = 0; });
         setupTabs(find('bcm-history-tabs'));
@@ -952,7 +1101,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         find('bcm-allowlist').value = manualWhitelistTerms.join('\n');
         find('bcm-alt').checked = altTextEnforcementEnabled;
         find('bcm-follows').checked = autoWhitelistEnabled;
-        const draft = () => validateSettings({ filteredTerms: find('bcm-blocklist').value.split('\n'), manualWhitelistTerms: find('bcm-allowlist').value.split('\n'), altTextEnforcementEnabled: find('bcm-alt').checked, autoWhitelistEnabled: find('bcm-follows').checked, ai: draftAI() });
+        const draft = () => validateSettings({ filteredTerms: find('bcm-blocklist').value.split('\n'), manualWhitelistTerms: find('bcm-allowlist').value.split('\n'), altTextEnforcementEnabled: find('bcm-alt').checked, autoWhitelistEnabled: find('bcm-follows').checked, ai: draftAI(), backupPlatforms: draftPlatforms });
         function status(message, error = false) { find('bcm-save-status').textContent = message; find('bcm-save-status').dataset.error = String(error); }
         updateDialogStatus = () => {
             if (!configDialog)
@@ -1103,9 +1252,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             endOperation(operation);
         } }));
         find('bcm-export').addEventListener('click', () => { try {
-            const url = URL.createObjectURL(new Blob([JSON.stringify({ format: 'bluesky-content-manager-settings', version: 1, settings: draft() }, null, 2)], { type: 'application/json' })), link = element('a');
+            const url = URL.createObjectURL(new Blob([JSON.stringify(exportBackup(draft()))], { type: 'application/json' })), link = element('a');
             link.href = url;
-            link.download = 'bluesky-content-manager-settings.json';
+            link.download = 'content-filter-backup.json';
             link.click();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
             status('Settings backup exported. Unsaved editor changes are included.');
@@ -1123,20 +1272,20 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                 return;
             let loaded = false;
             try {
-                if (file.size > 2 * 1024 * 1024)
-                    throw new Error('Choose a settings file smaller than 2 MB.');
-                const value = JSON.parse(yield file.text());
-                if (value.format !== 'bluesky-content-manager-settings' || value.version !== 1)
-                    throw new Error('Choose a Bluesky Content Manager settings backup.');
-                const imported = validateSettings(value.settings);
-                find('bcm-blocklist').value = imported.filteredTerms.join('\n');
-                find('bcm-allowlist').value = imported.manualWhitelistTerms.join('\n');
-                find('bcm-alt').checked = imported.altTextEnforcementEnabled;
-                find('bcm-follows').checked = imported.autoWhitelistEnabled;
-                if (value.settings.ai)
-                    applyAIDraft(dialog, imported.ai);
+                if (file.size > BACKUP_FILE_BYTES) throw new Error('Settings files must be at most 10 MiB.');
+                const backup = parseBackup(yield file.text());
+                if (configDialog !== dialog) return;
+                const options = backup.platforms.bluesky || {};
+                const platforms = mergePlatformSettings(draftPlatforms, backup.platforms);
+                if (dirty && !window.confirm('Replace your unsaved draft with this backup?')) return;
+                find('bcm-blocklist').value = backup.shared.blocklist.join('\n');
+                find('bcm-allowlist').value = backup.shared.allowlist.join('\n');
+                if (options.altTextEnforcementEnabled !== undefined) find('bcm-alt').checked = options.altTextEnforcementEnabled;
+                if (options.autoWhitelistEnabled !== undefined) find('bcm-follows').checked = options.autoWhitelistEnabled;
+                if (options.ai) applyAIDraft(dialog, options.ai);
+                draftPlatforms = platforms;
                 loaded = dirty = true;
-                status('Backup loaded into the editors. Review it, then choose Save changes.');
+                status(backup.shared.blocklist.length.toLocaleString() + ' blocked and ' + backup.shared.allowlist.length.toLocaleString() + ' allowed entries loaded. ' + (backup.source && backup.source !== 'bluesky' ? 'Only shared lists apply here; other-platform preferences are retained for export. ' : '') + 'Review, then choose Save changes.');
             }
             catch (error) {
                 status(`Import failed. ${error.message} Your lists were kept.`, true);
@@ -1174,12 +1323,13 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
                     return;
                 const raw = JSON.stringify({ version: 1, settings: value });
                 yield GM_setValue(SETTINGS_KEY, raw);
+                if (GM_getValue(SETTINGS_KEY, null) !== raw) throw new Error('Storage verification failed. Export your draft and retry; saved data may be incomplete.');
                 settingsRaw = raw;
                 baseRaw = raw;
                 installSettings(value);
                 for (const key of ['settings', SETTINGS_KEY, 'filteredTerms', 'manualWhitelistTerms', 'autoWhitelistEnabled', 'altTextEnforcementEnabled', 'whitelistedUsers'])
                     issues.delete(key);
-                issues.delete('ai-settings');
+                issues.delete('ai-settings'); issues.delete('backup-platforms');
                 yield refreshEnvironment(true);
                 dirty = false;
                 status('Saved. Filters updated without reloading the page.');
@@ -1461,7 +1611,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             return false;
         }
     }
-    function aiAllowed(post, data) { return isWhitelisted(post, data) || !!regexMatchAny([data.general, data.text, data.names, data.labels, ...data.images.map(i => i.text)].join(' '), manualWhitelistTerms.filter(t => !t.startsWith('@'))); }
+    function aiAllowed(post, data) { return isWhitelisted(post, data) || !!regexMatchAny([data.general, data.text, data.names, data.labels, ...data.images.map(i => i.text)].join(' '), allowedKeywordTerms); }
     function aiText(post, legacyKeep = false) {
         const clone = post.cloneNode(true);
         clone.querySelectorAll('[data-bcm-ui],button,[role="button"],time,a[href*="/profile/"]:not([href*="/post/"])').forEach(n => n.remove());

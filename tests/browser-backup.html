@@ -1,0 +1,66 @@
+<!doctype html><meta charset="utf-8"><title>Unified filter backup browser tests</title>
+<h1>Unified filter backup browser tests</h1><pre id="results">Running…</pre><div id="frames"></div>
+<script>
+// Run against real DOM controls; GM storage and network are the only external doubles.
+const results=document.querySelector('#results');results.textContent='';
+function log(s){results.textContent+=s+'\n';}
+function check(ok,message){if(!ok)throw Error(message);}
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function until(predicate){for(let i=0;i<100;i++){if(predicate())return;await pause(20);}throw Error('Timed out waiting for UI operation');}
+const ai={enabled:false,mode:'hide',scope:'all',analyzeImages:true,topics:['Sports except MMA'],budget:.3,requestLimit:123};
+const backup=(blocklist=['blockword'],platforms={})=>({format:'unified-content-filter-backup',version:1,shared:{blocklist,allowlist:['science']},platforms});
+async function frame(platform,initial){
+ const element=document.createElement('iframe');element.style='width:900px;height:700px';document.querySelector('#frames').append(element);
+ const w=element.contentWindow,d=w.document;d.open();d.write('<!doctype html><body><main id="feed"></main>');d.close();
+ const values=new Map(initial||[]);let writes=0,exported,confirm=true,corrupt=false;
+ Object.assign(w,{GM_addStyle:css=>{const s=d.createElement('style');s.textContent=css;d.head.append(s);},GM_getValue:(key,fallback)=>values.has(key)?values.get(key):fallback,GM_setValue:(key,value)=>{writes++;values.set(key,corrupt?'broken':value);},GM_registerMenuCommand:()=>1,GM_unregisterMenuCommand(){},GM_addValueChangeListener(){},GM_xmlhttpRequest(){throw Error('Unexpected network request');}});
+ if(location.hash){const property=Object.getOwnPropertyDescriptor(w.HTMLTextAreaElement.prototype,'value');Object.defineProperty(w.HTMLTextAreaElement.prototype,'value',{get:property.get,set(value){const t=performance.now();property.set.call(this,value);if(value.length>100000)log('PROFILE textarea assignment '+(performance.now()-t).toFixed(1)+' ms');}});const rects=w.Element.prototype.getClientRects;w.Element.prototype.getClientRects=function(){const t=performance.now(),result=rects.call(this);if(performance.now()-t>50)log('PROFILE layout '+(performance.now()-t).toFixed(1)+' ms');return result;};const listen=w.EventTarget.prototype.addEventListener;w.EventTarget.prototype.addEventListener=function(type,handler,options){if(this.id&&((this.id.endsWith('-import-file')&&type==='change')||(this.id.endsWith('-save')&&type==='click'))){const id=this.id;return listen.call(this,type,function(e){const t=performance.now();Promise.resolve(handler.call(this,e)).then(()=>log('PROFILE '+id+' complete '+(performance.now()-t).toFixed(1)+' ms'));},options);}return listen.call(this,type,handler,options);};}
+ w.GM={getValue:(key,fallback)=>Promise.resolve(w.GM_getValue(key,fallback)),setValue:(key,value)=>Promise.resolve(w.GM_setValue(key,value)),registerMenuCommand:()=>1,unregisterMenuCommand(){}};
+ w.confirm=()=>confirm;w.URL.createObjectURL=blob=>{exported=blob;return 'blob:test';};w.URL.revokeObjectURL=()=>{};w.HTMLAnchorElement.prototype.click=function(){};
+ const file=platform==='bluesky'?'bluesky-content-manager.user.js':'reddit-advanced-content-filter.user.js';
+ let source=await fetch('/'+file).then(r=>r.text());
+ const expose=platform==='bluesky'?`window.testAPI={open:createConfigUI,boot:initializeSettings,observe:observePosts,collect:rescanPosts,active:()=>settings};`:`window.testAPI={open:createConfig,boot:refreshConfiguration,observe:()=>{},collect:()=>collectPosts(document.body),active:()=>({blocklist:blocklistArr,whitelist:whitelistArr,ai:settings.ai})};`;
+ source=source.replace(/^\s*main\(\);\s*$/m,expose);const script=d.createElement('script');script.textContent=source;d.body.append(script);
+ await w.testAPI.boot();w.testAPI.open();
+ return {w,d,values,element,prefix:platform==='bluesky'?'bcm':'raf',get writes(){return writes;},get exported(){return exported;},confirm:value=>confirm=value,corrupt:value=>corrupt=value};
+}
+function input(f,name){return f.d.querySelector('#'+f.prefix+'-'+name);}
+async function importFile(f,value){const file=input(f,'import-file'),data=new f.w.DataTransfer();data.items.add(new f.w.File([typeof value==='string'?value:JSON.stringify(value)],'backup.json',{type:'application/json'}));file.files=data.files;file.dispatchEvent(new f.w.Event('change'));await until(()=>!file.disabled);await pause(20);}
+async function save(f){input(f,'save').click();await until(()=>!input(f,'save')||!input(f,'save').disabled);await pause(30);}
+async function run(platform){
+ const f=await frame(platform);const block=input(f,'blocklist'),allow=input(f,platform==='bluesky'?'allowlist':'whitelist')||input(f,'allowlist');
+ const foreign=platform==='bluesky'?'reddit':'bluesky';
+ const platforms={bluesky:{autoWhitelistEnabled:false,altTextEnforcementEnabled:false,ai:Object.assign({},ai,{scope:'news'})},reddit:{ai}};
+ await importFile(f,backup(['first',' FIRST ','ไทย'],platforms));
+ check(block.value==='first\nไทย','normalized draft lists');check(f.writes===0,'import must not save');
+ block.value='unsaved';block.dispatchEvent(new f.w.Event('input',{bubbles:true}));f.confirm(false);
+ await importFile(f,backup(['replacement']));check(block.value==='unsaved','cancel retains draft');
+ f.confirm(true);await importFile(f,'{');check(block.value==='unsaved','malformed JSON retains draft');
+ await importFile(f,backup(['replacement'],{[foreign]:{ai:Object.assign({},ai,{scope:'invalid'})}}));check(block.value==='unsaved','bad inactive settings retain draft');
+ await importFile(f,backup(['first'],platforms));await save(f);
+ check(f.writes===1,'save writes one settings record');check(!f.d.querySelector('dialog'),'successful save closes dialog');
+ f.w.testAPI.open();input(f,'export').click();const exported=JSON.parse(await f.exported.text());
+ check(exported.format==='unified-content-filter-backup','unified export');check(exported.platforms[foreign].ai.requestLimit===123,'inactive settings survive save/reopen/export');
+ check(!JSON.stringify(exported).includes('apiKey'),'no API key export');
+ await importFile(f,backup(['list-only']));
+ input(f,'export').click();const listsOnly=JSON.parse(await f.exported.text());check(listsOnly.platforms[platform].ai.requestLimit===123,'list-only import preserves AI preferences');
+ f.corrupt(true);await save(f);check(f.d.querySelector('dialog').open,'storage failure keeps draft open');check(input(f,'save-status').textContent.includes('Storage verification failed'),'storage failure reported');
+ f.corrupt(false);f.element.remove();
+ log('PASS '+platform+': transactional import, dirty cancel, draft controls, platform round-trip, storage verification');
+}
+async function large(platform,count){
+ const f=await frame(platform);const terms=Array.from({length:count},(_,i)=>'keyword'+i);terms[count-1]='blockword';
+ const started=performance.now();await importFile(f,backup(terms));const importMs=performance.now()-started;
+ const saveStart=performance.now();await save(f);const saveMs=performance.now()-saveStart;
+ check(!f.d.querySelector('dialog'),'large save closes dialog');
+ f.w.testAPI.open();input(f,'export').click();const exported=JSON.parse(await f.exported.text());check(exported.shared.blocklist.length===count,'large export retains every entry');
+ f.d.querySelector('dialog').close();await pause(20);
+ const feed=f.d.querySelector('#feed');const append=offset=>{for(let i=offset;i<offset+30;i++){const post=f.d.createElement(platform==='bluesky'?'article':'shreddit-post');post.setAttribute('data-testid','post');post.setAttribute('post-title',i%2?'science blockword':'blockword');post.setAttribute('id','t3_post'+i);post.innerHTML='<h2>'+(i%2?'science blockword':'blockword')+'</h2><a href="https://'+(platform==='bluesky'?'bsky.app/profile/test/post/':'www.reddit.com/comments/')+'post'+i+'/">post</a>';feed.append(post);}};
+ f.w.testAPI.observe();append(0);f.w.testAPI.collect();await pause(250);append(30);f.w.testAPI.collect();await pause(250);
+ check(feed.children.length===60,'new feed cards remain in DOM after repeated appends');
+ const hidden=feed.querySelectorAll('.'+f.prefix+'-filtered').length;check(hidden>0,'new feed cards actually filtered');check(hidden<60,'allowlisted cards remain visible');
+ const stored=Array.from(f.values);f.element.remove();const reopened=await frame(platform,stored);check(input(reopened,'blocklist').value.split('\n').length===count,'fresh script reload preserves all entries');reopened.element.remove();
+ log('PASS '+platform+' '+count+': import '+importMs.toFixed(1)+' ms; save '+saveMs.toFixed(1)+' ms; export/reload, appended feed batches, allowlist priority');
+}
+(async()=>{try{if(location.hash){await large('bluesky',100000);}else{for(const p of ['bluesky','reddit'])await run(p);for(const p of ['bluesky','reddit'])for(const n of [1000,10000,50000,100000])await large(p,n);}log('ALL BROWSER TESTS PASSED');document.title='PASS — Unified filter backup browser tests';}catch(e){log('FAIL '+e.stack);document.title='FAIL — Unified filter backup browser tests';}})();
+</script>

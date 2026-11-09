@@ -1,0 +1,10 @@
+{
+  "name": "thepick-userscripts-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "check:syntax": "node tests/check-es2015.cjs && node --check bluesky-content-manager.user.js && node --check reddit-advanced-content-filter.user.js",
+    "benchmark": "node tests/benchmark-filter-backup.cjs",
+    "test:browser": "node tests/serve-browser-tests.cjs"
+  }
+}
