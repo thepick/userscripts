@@ -27,6 +27,10 @@ The initial imports preserved the Greasy Fork downloads exactly, including their
 | Gmail Clear Conversations | 0.4.1 | [gmail-clear-conversations.user.js](gmail-clear-conversations.user.js) | [Listing](https://greasyfork.org/en/scripts/602917) |
 | Reddit Multi-Column Robust (unlisted) | 2026.11.2.2 | [reddit-multi-column-robust.user.js](reddit-multi-column-robust.user.js) | [Listing](https://greasyfork.org/en/scripts/603358) |
 
+## Gmail Clear Conversations diagnostics
+
+In v0.4.2, choose **Download diagnostic log** from the warning or the userscript manager's menu. The JSON file records the failed check, script version, and recent layout events from the current tab. It excludes email contents, addresses, thread IDs, and page URLs. Download it before reloading Gmail to retain the current tab's history.
+
 ## Shared filter backups
 
 Bluesky 4.05 and Reddit 4.04 support one shared blocklist, allowlist, and AI-prompt backup with separate platform settings. See the [format, compatibility, limits, and validation results](docs/unified-filter-backup.md). The 100,000-entry ceiling remains provisional while editor performance is evaluated.

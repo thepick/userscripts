@@ -1,0 +1,115 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Gmail Clear Conversations regression tests</title>
+<main></main>
+<pre id="result">Running…</pre>
+<script>
+  const pane = document.querySelector('main');
+  const result = document.querySelector('#result');
+  const menu = new Map();
+  const footer = '<div id="origin"><div jsaction="gmail"><div class="amr"><div class="amn"><button class="ams">Reply</button></div></div></div></div>';
+  const slot = '<div class="amr"><div class="nr wR"></div></div>';
+  const inline = '<div class="amr"><div class="amn"><button class="ams">Reply</button></div></div>';
+  const message = (day, reply = slot) => `<article class="h7" data-message-id="private-message-${day}">
+    <span class="g3" title="Nov ${day}, 2026, 10:00 AM">Date</span>
+    <div class="a3s">private-email@example.test</div><div class="ip"><div class="bJvOmf">${reply}</div></div>
+  </article>`;
+  const conversation = (reply, actions = footer) =>
+    `<section class="a98"><h2>Private subject</h2><div class="aHU">${message(1)}${message(2, reply)}</div>${actions}</section>`;
+  const current = () => pane.querySelector('.aHU').firstElementChild.getAttribute('data-message-id');
+  const widget = () => pane.querySelector('.gcc-actions-widget');
+  const expect = (condition, label) => { if (!condition) throw new Error(label); };
+  const settle = () => new Promise(resolve => setTimeout(resolve, 140));
+  const nativeClick = HTMLAnchorElement.prototype.click;
+  let watchdog, downloaded, clock = Date.now();
+  Date.now = () => clock;
+  window.setInterval = callback => { watchdog = callback; };
+  window.GM_registerMenuCommand = (name, callback) => menu.set(name, callback);
+  const urls = new Map();
+  const createObjectURL = URL.createObjectURL.bind(URL);
+  URL.createObjectURL = blob => {
+    const url = createObjectURL(blob);
+    urls.set(url, blob);
+    return url;
+  };
+  HTMLAnchorElement.prototype.click = function () {
+    if (this.download && urls.has(this.href)) downloaded = urls.get(this.href).text();
+    else nativeClick.call(this);
+  };
+  pane.innerHTML = conversation();
+</script>
+<script src="../gmail-clear-conversations.user.js"></script>
+<script>
+  (async () => {
+    expect(current().endsWith('-2') && widget(), 'Initial footer moves with the newest message');
+    pane.querySelector('.aHU').insertAdjacentHTML('beforeend', message(3));
+    await settle();
+    expect(current().endsWith('-3') && widget() && widget().closest('article') === pane.querySelector('article'),
+      'A new message gets the existing footer after the thread has been reversed');
+
+    const newest = pane.querySelector('article');
+    newest.querySelector('.nr').remove();
+    await settle();
+    expect(widget() && widget().parentElement.matches('.bJvOmf'), 'A unique reply container works without the old slot');
+
+    pane.innerHTML = conversation(inline, '');
+    await settle();
+    expect(current().endsWith('-2') && pane.querySelector('article .ams') && !widget(),
+      'Native inline reply controls are left in place');
+
+    pane.innerHTML = conversation(slot, '');
+    await settle();
+    expect(current().endsWith('-1'), 'A missing footer keeps the native order');
+    watchdog();
+    clock += 13000;
+    watchdog();
+    const exportButton = Array.from(document.querySelectorAll('.gcc-warning button'))
+      .find(button => button.textContent === 'Download diagnostic log');
+    expect(exportButton, 'Persistent failures offer a diagnostic download');
+    exportButton.click();
+    const raw = await downloaded;
+    const log = JSON.parse(raw);
+    expect(log.currentIssue.detail === 'conversation-footer-missing', 'Export names the exact failed check');
+    expect(!/private-email|private-message|Private subject|mail\.google\.com/.test(raw), 'Export omits mailbox data');
+
+    pane.querySelector('section').insertAdjacentHTML('beforeend', footer);
+    await settle();
+    watchdog();
+    expect(current().endsWith('-2') && widget() && !document.querySelector('.gcc-warning'), 'Late footer repairs the layout');
+    const edit = document.createElement('div');
+    edit.contentEditable = 'true';
+    edit.textContent = 'Unsaved draft';
+    pane.querySelector('article .ip').append(edit);
+    edit.focus();
+    menu.get('Toggle Clear Conversations layout')();
+    expect(current().endsWith('-2') && document.activeElement === edit && edit.textContent === 'Unsaved draft',
+      'Disabling while editing preserves the active draft');
+    edit.remove();
+    await settle();
+    expect(current().endsWith('-1') && pane.querySelector('#origin .ams'), 'Gmail layout restores the footer and message order');
+    menu.get('Download diagnostic log')();
+    const after = JSON.parse(await downloaded);
+    expect(after.enabled === false && after.events.some(event => event.detail === 'conversation-footer-missing'),
+      'The menu can export a recent failure after the layout is disabled');
+
+    pane.innerHTML = conversation(slot, footer + footer);
+    await settle();
+    menu.get('Toggle Clear Conversations layout')();
+    menu.get('Download diagnostic log')();
+    const ambiguous = JSON.parse(await downloaded);
+    expect(current().endsWith('-1') && !widget() && ambiguous.currentIssue.detail === 'multiple-conversation-footers',
+      'Ambiguous native controls are left alone and logged');
+
+    const queryAll = document.querySelectorAll.bind(document);
+    document.querySelectorAll = () => { throw new TypeError('private-email@example.test'); };
+    pane.append(document.createElement('div'));
+    await settle();
+    document.querySelectorAll = queryAll;
+    menu.get('Download diagnostic log')();
+    const errorLog = await downloaded;
+    const failure = JSON.parse(errorLog).currentIssue;
+    expect(failure.detail === 'discover-conversations' && failure.errorType === 'TypeError' && !errorLog.includes('private-email'),
+      'Exceptions include the failed stage and error type without raw exception text');
+    result.textContent = 'PASS';
+  })().catch(error => { result.textContent = 'FAIL: ' + error.message; });
+</script>
