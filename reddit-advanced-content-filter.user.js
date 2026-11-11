@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Reddit Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.06
-// @description  Optional Liquid Ultra AI topic and picture filtering, with keyword/subreddit blocking, whitelist overrides, preview, history, and local backups.
+// @version      4.07
+// @description  Filter by keyword, subreddit, or author with allowlist overrides, optional Liquid Ultra AI, history, and local backups.
 // @author       Stuart Saddler
 // @license      MIT
 // @match        *://www.reddit.com/*
@@ -22,6 +22,11 @@
 // @connect      a.thumbs.redditmedia.com
 // @connect      b.thumbs.redditmedia.com
 // @grant        GM.addValueChangeListener
+// @grant        GM.listValues
+// @grant        GM_listValues
+// @grant        GM_addValueChangeListener
+// @grant        GM.deleteValue
+// @grant        GM_deleteValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_unregisterMenuCommand
 // @downloadURL https://update.greasyfork.org/scripts/516666/Reddit%20Advanced%20Content%20Filter.user.js
@@ -87,6 +92,12 @@
 .raf-history{list-style:none;padding:0;margin:10px 0}.raf-history li{border-bottom:1px solid var(--raf-line);padding:10px 0;overflow-wrap:anywhere}.raf-history p{margin:4px 0}.raf-pager{justify-content:space-between}
 .raf-editor-pages{margin-top:8px}.raf-editor-pages span{flex-basis:100%;order:-1}
 .raf-notice{position:fixed;bottom:16px;right:16px;z-index:1000000;max-width:min(380px,calc(100% - 32px));padding:12px 16px;border:1px solid #8ba3b5;border-radius:8px;background:#172b3a;color:white;font:14px/1.4 system-ui,sans-serif;cursor:pointer}
+.raf-quick-menu,.raf-quick-feedback{position:fixed;z-index:2147483647;color:white;background:#172b3a;border:1px solid #8ba3b5;border-radius:8px;padding:8px;font:14px/1.4 system-ui,sans-serif}
+.raf-quick-menu{display:grid;gap:4px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto}
+.raf-quick-menu button,.raf-quick-feedback button{color:inherit;background:#243e50;border:1px solid #8ba3b5;border-radius:5px;padding:6px 10px;cursor:pointer;font:inherit;text-align:left;overflow-wrap:anywhere}
+.raf-quick-menu button:focus-visible,.raf-quick-feedback button:focus-visible{outline:2px solid white;outline-offset:-3px}
+.raf-quick-feedback{bottom:12px;left:12px;max-width:min(380px,calc(100vw - 24px));max-height:50vh;overflow:auto;overflow-wrap:anywhere}
+.raf-quick-feedback div{padding:4px}.raf-quick-feedback button{margin-inline-start:8px}
 @media(max-width:560px){.raf-editors{grid-template-columns:1fr}.raf-head,.raf-actions,.raf-body{padding:13px 15px}.raf-actions{flex-wrap:wrap}.raf-actions .raf-row{margin-left:auto}.raf-nav{padding-inline:5px}}
 @media(max-width:390px){.raf-nav{display:grid;grid-template-columns:1fr 1fr;gap:0}.raf-dialog .raf-nav button{text-align:left}}
 @media(pointer:coarse){.raf-dialog button,.raf-dialog .raf-check{min-height:44px}.raf-dialog textarea,.raf-dialog input:not([type="checkbox"]):not([type="radio"]):not([type="file"]){min-height:44px;font-size:16px}}
@@ -99,11 +110,13 @@
     const cacheLimit = 5000, cacheAge = 30 * 86400000, historyPageSize = 100;
     const pendingPosts = new Set(), blockedPosts = new Map(), remembered = new Map(), pendingMemory = new Map(), issues = new Map();
     let postStates = new WeakMap(), postChanges = new WeakMap();
-    let blocklistArr = [], whitelistArr = [], blocklistSet = new Set(), blockRules = [], whiteRules = [];
+    let blocklistArr = [], whitelistArr = [], blockRules = [], whiteRules = [];
+    let keywordBlocks = new Set(), keywordAllows = new Set();
+    let redditFilters = {}, redditSets = {}, hasBlockRules = false, activeConfiguration;
     let processing = false, menuCommand = null, counterTimer = null, refreshHistory = null, refreshStatus = null;
     let ruleEpoch = 0, ruleContext = '', contextReady = Promise.resolve(), settingsRevision = '';
     let memoryTimer = null, memoryGeneration = 0, memoryWrites = Promise.resolve(), storageRefresh = null;
-    let configurationEpoch = 0, refreshAgain = false;
+    let refreshAgain = false;
     let dialogElement = null;
     const canRemember = typeof crypto !== 'undefined' && Boolean(crypto.subtle);
 
@@ -139,13 +152,29 @@
             if (names.indexOf(key) === -1) throw new Error(label + ' contains an unsupported field: ' + key + '. Remove unknown fields and credentials before importing.');
         }
     }
+    const redditFilterKeys = ['subreddits', 'users', 'allowSubreddits', 'allowUsers', 'legacySubreddits'];
+    function redditName(value, user) {
+        const name = String(value || '').trim().toLowerCase();
+        return (user ? /^[a-z0-9_-]{1,20}$/ : /^[a-z0-9_]{1,21}$/).test(name) ? name : '';
+    }
+    function validateRedditFilters(value) {
+        backupFields(value, redditFilterKeys, 'Reddit filters');
+        const result = {};
+        for (const key of redditFilterKeys) {
+            const user = key === 'users' || key === 'allowUsers';
+            result[key] = normalizeFilterList(Object.prototype.hasOwnProperty.call(value, key) ? value[key] : [], key);
+            if (result[key].some(name => !redditName(name, user))) throw new Error('Invalid Reddit name in ' + key + '.');
+        }
+        return result;
+    }
     function preservePlatformSettings(value) {
         if (value === undefined) return {};
         backupFields(value, ['bluesky', 'reddit'], 'Platforms');
         const result = {};
         for (const platform of Object.keys(value)) {
             const options = value[platform], copy = {};
-            backupFields(options, platform === 'bluesky' ? ['autoWhitelistEnabled', 'altTextEnforcementEnabled', 'ai'] : ['ai'], platform + ' settings');
+            backupFields(options, platform === 'bluesky' ? ['autoWhitelistEnabled', 'altTextEnforcementEnabled', 'ai'] : ['ai', 'filters'], platform + ' settings');
+            if (Object.prototype.hasOwnProperty.call(options, 'filters')) copy.filters = validateRedditFilters(options.filters);
             for (const key of ['autoWhitelistEnabled', 'altTextEnforcementEnabled']) {
                 if (Object.prototype.hasOwnProperty.call(options, key)) {
                     if (typeof options[key] !== 'boolean') throw new Error(platform + ' ' + key + ' must be true or false.');
@@ -198,7 +227,12 @@
         if (value.format === 'unified-content-filter-backup') {
             backupObject(value.shared, 'Shared filters');
             shared = validateSharedFilters(value.shared.blocklist, value.shared.allowlist);
+            // Older version-1 readers ignore top-level additions. Keep the extension out of platforms on disk.
+            if (value.platforms && value.platforms.reddit && Object.prototype.hasOwnProperty.call(value.platforms.reddit, 'filters'))
+                throw new Error('Reddit filters must use the top-level redditFilters field.');
             platforms = preservePlatformSettings(value.platforms);
+            if (Object.prototype.hasOwnProperty.call(value, 'redditFilters'))
+                platforms.reddit = Object.assign({}, platforms.reddit, { filters: validateRedditFilters(value.redditFilters) });
         } else if (value.format === 'bluesky-content-manager-settings') {
             source = 'bluesky';
             backupObject(value.settings, 'Bluesky settings');
@@ -223,6 +257,10 @@
         value.shared.aiTopics = sharedAITopics(shared, value.platforms) || [];
         for (const platform of Object.keys(value.platforms)) {
             if (value.platforms[platform].ai) delete value.platforms[platform].ai.topics;
+        }
+        if (value.platforms.reddit && value.platforms.reddit.filters) {
+            value.redditFilters = value.platforms.reddit.filters;
+            delete value.platforms.reddit.filters;
         }
         if (new TextEncoder().encode(JSON.stringify(value)).length > BACKUP_FILE_BYTES) throw new Error('The JSON backup exceeds 10 MiB. Shorten the lists before exporting.');
         return value;
@@ -304,12 +342,34 @@
     function exportBackup(value) {
         const platforms = preservePlatformSettings(value.backupPlatforms);
         platforms.reddit = { ai: value.ai };
+        if (value.redditFilters) platforms.reddit.filters = value.redditFilters;
         return createUnifiedBackup({ blocklist: value.blocklist, allowlist: value.whitelist, aiTopics: value.ai.topics }, platforms);
     }
     function validateConfig(value) {
         if (!value || typeof value !== 'object') throw new Error('The settings are not a valid object.');
         const shared = validateSharedFilters(value.blocklist, value.whitelist);
-        return { blocklist: shared.blocklist, whitelist: shared.allowlist, ai: validateAI(value.ai), backupPlatforms: preservePlatformSettings(value.backupPlatforms) };
+        const config = { blocklist: shared.blocklist, whitelist: shared.allowlist, ai: validateAI(value.ai), backupPlatforms: preservePlatformSettings(value.backupPlatforms) };
+        return splitLegacyFilters(config, value.redditFilters);
+    }
+
+    function splitLegacyFilters(config, existing) {
+        const filters = validateRedditFilters(existing === undefined ? {} : existing);
+        if (existing === undefined) {
+            for (const key of ['blocklist', 'whitelist']) {
+                const allow = key === 'whitelist';
+                config[key] = config[key].filter(term => {
+                    const user = term.startsWith('u/'), subreddit = term.startsWith('r/');
+                    const name = (user || subreddit) && redditName(term.slice(2), user);
+                    if (!name) return true;
+                    filters[user ? (allow ? 'allowUsers' : 'users') : (allow ? 'allowSubreddits' : 'subreddits')].push(name);
+                    return false;
+                });
+            }
+            filters.legacySubreddits = config.blocklist.filter(term => redditName(term, false));
+        }
+        const keywords = new Set(config.blocklist);
+        filters.legacySubreddits = filters.legacySubreddits.filter(term => keywords.has(term));
+        return Object.assign(config, { redditFilters: filters });
     }
 
     function reportIssue(key, message) {
@@ -324,15 +384,15 @@
         if (refreshStatus) refreshStatus();
     }
 
-    const readConfiguration = runAsync(function* () {
+    const readBaseConfiguration = runAsync(function* () {
         let snapshot = yield GM.getValue(settingsKey, null);
         const originalSettings = snapshot === null;
         if (originalSettings) snapshot = yield GM.getValue('rafSettingsV1', null);
-        const config = { blocklist: blocklistArr, whitelist: whitelistArr, ai: settings.ai, backupPlatforms: settings.backupPlatforms || {} }, warnings = [];
+        const config = { blocklist: [], whitelist: [], ai: validateAI(), backupPlatforms: {} }, warnings = [];
         if (snapshot !== null) {
             if (!snapshot || snapshot.version !== 1) {
                 warnings.push('Saved settings are invalid. Their original data has not been overwritten. Restore a backup or correct the lists before saving.');
-                return Object.assign(config, { revision: 'invalid:' + JSON.stringify(snapshot), warnings });
+                return Object.assign(splitLegacyFilters(config), { revision: 'invalid:' + JSON.stringify(snapshot), warnings });
             }
             try { config.backupPlatforms = preservePlatformSettings(snapshot.backupPlatforms); }
             catch (error) { warnings.push('Retained platform settings are invalid. Your active filters were recovered; export a backup before saving to repair this record.'); }
@@ -346,6 +406,8 @@
             try { config.ai = validateAI(originalSettings ? undefined : snapshot.ai); } catch (e) { config.ai = validateAI(); warnings.push('Saved AI settings are invalid. AI is off; review and save them again.'); }
             try { validateSharedFilters(config.blocklist, config.whitelist); }
             catch (error) { config.blocklist = blocklistArr; config.whitelist = whitelistArr; warnings.push(error.message + ' Saved data was not overwritten; the last valid filters were kept.'); }
+            try { splitLegacyFilters(config, snapshot.redditFilters); }
+            catch (error) { warnings.push(error.message); splitLegacyFilters(config); }
             return Object.assign(config, { revision, warnings });
         }
         const legacy = yield Promise.all([GM.getValue('blocklist', []), GM.getValue('whitelist', [])]);
@@ -355,7 +417,8 @@
         }
         try { validateSharedFilters(config.blocklist, config.whitelist); }
             catch (error) { config.blocklist = blocklistArr; config.whitelist = whitelistArr; warnings.push(error.message + ' Saved data was not overwritten; the last valid filters were kept.'); }
-            return Object.assign(config, { revision: 'legacy:' + JSON.stringify(legacy), warnings });
+        const revision = 'legacy:' + (canRemember ? (yield fingerprint(JSON.stringify(legacy))) : JSON.stringify(legacy));
+        return Object.assign(splitLegacyFilters(config), { revision, warnings });
     });
 
     const fingerprint = runAsync(function* (value) {
@@ -363,16 +426,201 @@
         return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
     });
 
-    function setRules(blocklist, whitelist) {
-        blocklistArr = normalizeList(blocklist);
-        whitelistArr = normalizeList(whitelist);
-        blocklistSet = new Set(blocklistArr);
+    const editPrefix = 'rafaiFilterEdit:', editSignal = 'rafaiFilterEditSignal';
+    const editableLists = ['blocklist', 'whitelist'].concat(redditFilterKeys);
+    // shortcut: edits accumulate; add compaction only with a checkpoint that accounts for concurrent cross-origin writers.
+    const knownEdits = new Map();
+    let writes = Promise.resolve(), lastRead;
+
+    function configList(config, key) {
+        return key === 'blocklist' || key === 'whitelist' ? config[key] : config.redditFilters[key];
+    }
+
+    function listStorageKeys() {
+        if (typeof GM.listValues === 'function') return GM.listValues();
+        if (typeof GM_listValues === 'function') return GM_listValues();
+        return null;
+    }
+
+    const readConfiguration = runAsync(function* () {
+        const config = yield readBaseConfiguration(), keys = yield listStorageKeys();
+        config.clock = 0;
+        config.ruleEdits = {};
+        config.rejectedEdits = new Set();
+        config.skippedEdits = new Set();
+        if (!keys) return config;
+        const editKeys = keys.filter(key => key.startsWith(editPrefix)).sort(), baseRevision = config.baseRevision = config.revision;
+        config.revision += ':' + editKeys.join(',');
+        if (lastRead && lastRead.revision === config.revision && !config.warnings.length) return lastRead;
+        const maps = new Map(editableLists.map(key => [key, new Map(configList(config, key).map(term => [term, '']))]));
+        const counts = new Map(editableLists.map(key => [key, configList(config, key).length]));
+        const encoder = new TextEncoder();
+        let sharedBytes = encoder.encode(config.blocklist.join('\n')).length + encoder.encode(config.whitelist.join('\n')).length;
+        const edits = yield Promise.all(editKeys.map(key => {
+            if (knownEdits.has(key)) return knownEdits.get(key);
+            return Promise.resolve(GM.getValue(key, null)).then(value => {
+                if (!value || !Number.isSafeInteger(value.clock) || value.clock < 1 || !Array.isArray(value.rules))
+                    throw new Error('Invalid saved Reddit filter edit.');
+                const entry = { key, value };
+                knownEdits.set(key, entry);
+                return entry;
+            });
+        }));
+        edits.sort((a, b) => a.value.clock - b.value.clock || (a.key < b.key ? -1 : 1));
+        for (const { key, value } of edits) {
+            config.clock = value.clock;
+            const staged = [], nextCounts = new Map(counts);
+            let bytes = sharedBytes;
+            for (const [list, term, present, onlyIf] of value.rules) {
+                const map = maps.get(list);
+                if (!map) throw new Error('Invalid saved Reddit filter list.');
+                const previous = map.get(term), wasPresent = typeof previous === 'string';
+                if (onlyIf && onlyIf !== (wasPresent ? previous : previous && previous.removed)) continue;
+                staged.push([map, term, present, wasPresent]);
+                if (present === wasPresent) continue;
+                const count = nextCounts.get(list), change = present ? 1 : -1;
+                nextCounts.set(list, count + change);
+                if (list === 'blocklist' || list === 'whitelist') {
+                    bytes += change * (encoder.encode(term).length + (Math.max(count, count + change) > 1 ? 1 : 0));
+                }
+            }
+            if (value.rules.length !== staged.length) {
+                config.skippedEdits.add(key);
+                continue;
+            }
+            if (bytes > FILTER_TEXT_BYTES || Array.from(nextCounts.values()).some(count => count > 100000)) {
+                config.rejectedEdits.add(key);
+                continue;
+            }
+            for (const [list, count] of nextCounts) counts.set(list, count);
+            sharedBytes = bytes;
+            for (const [map, term, present, wasPresent] of staged) {
+                if (present && !wasPresent) map.delete(term);
+                map.set(term, present ? key : { removed: key });
+            }
+            for (const list of Object.keys(value.order || {})) {
+                const map = maps.get(list), ordered = new Map();
+                for (const term of value.order[list]) if (map.has(term)) ordered.set(term, map.get(term));
+                for (const [term, marker] of map) if (!ordered.has(term)) ordered.set(term, marker);
+                maps.set(list, ordered);
+            }
+            if (value.ai) config.ai = Object.assign({}, config.ai, value.ai);
+            if (value.platforms) config.backupPlatforms = mergePlatformSettings(config.backupPlatforms, value.platforms);
+            if (value.repaired === baseRevision) config.warnings = [];
+        }
+        for (const [list, map] of maps) {
+            const terms = Array.from(map).filter(pair => typeof pair[1] === 'string').map(pair => pair[0]);
+            if (list === 'blocklist' || list === 'whitelist') config[list] = terms;
+            else config.redditFilters[list] = terms;
+            config.ruleEdits[list] = map;
+        }
+        lastRead = config;
+        return config;
+    });
+
+    function queueConfigurationWrite(work) {
+        const operation = writes.then(work);
+        writes = operation.catch(() => {});
+        return operation;
+    }
+
+    const writeConfigurationEdit = runAsync(function* (current, edit) {
+        if ((yield listStorageKeys()) === null) throw new Error('Updating filters requires a userscript manager with GM.listValues support.');
+        const key = editPrefix + Array.from(crypto.getRandomValues(new Uint32Array(4)), number => number.toString(16).padStart(8, '0')).join('');
+        const value = Object.assign({ clock: current.clock + 1 }, edit);
+        // Each write owns a key across both Reddit origins. The signal only wakes listeners.
+        yield GM.setValue(key, value);
+        if (JSON.stringify(yield GM.getValue(key, null)) !== JSON.stringify(value)) {
+            if (typeof GM.deleteValue === 'function') yield GM.deleteValue(key);
+            else if (typeof GM_deleteValue === 'function') yield GM_deleteValue(key);
+            throw new Error('Storage verification failed. The filter edit could not be verified.');
+        }
+        try { yield GM.setValue(editSignal, key); }
+        catch (e) { reportIssue('filter-sync', 'Other tabs will refresh their filters when they regain focus.'); }
+        yield refreshConfiguration();
+        const applied = yield readConfiguration();
+        if (!knownEdits.has(key)) throw new Error('The stored edit has not appeared in the filter list. Reload before retrying.');
+        if (applied.rejectedEdits.has(key)) throw new Error('Concurrent changes reached the filter list limit. Your edit was skipped.');
+        return applied.skippedEdits.has(key) ? null : key;
+    });
+
+    function editFilter(list, term, present) {
+        return queueConfigurationWrite(runAsync(function* () {
+            const current = yield readConfiguration(), map = current.ruleEdits[list];
+            if (!map) throw new Error('Updating filters requires a userscript manager with GM.listValues support.');
+            if (current.warnings.length) throw new Error('Review and repair saved filters in settings before using quick actions.');
+            const isPresent = typeof map.get(term) === 'string';
+            const alias = !present && (list === 'subreddits' || list === 'blocklist') &&
+                typeof current.ruleEdits.legacySubreddits.get(term) === 'string' && typeof current.ruleEdits.blocklist.get(term) === 'string';
+            if (!alias && isPresent === present) return null;
+            if (present) {
+                if (list === 'blocklist' || list === 'whitelist') {
+                    const values = configList(current, list).concat(term);
+                    validateSharedFilters(list === 'blocklist' ? values : current.blocklist, list === 'whitelist' ? values : current.whitelist);
+                } else if (configList(current, list).length >= 100000) throw new Error('This list already has 100,000 entries.');
+            }
+            const rules = isPresent === present ? [] : [[list, term, present]];
+            if (alias) rules.push(['legacySubreddits', term, false]);
+            return yield writeConfigurationEdit(current, { rules });
+        }));
+    }
+
+    function undoFilter(editID) {
+        return queueConfigurationWrite(runAsync(function* () {
+            const current = yield readConfiguration(), edit = knownEdits.get(editID);
+            if (!edit || current.rejectedEdits.has(editID) || current.skippedEdits.has(editID)) return null;
+            const rules = edit.value.rules.map(([list, term, present]) => [list, term, !present, editID]);
+            return yield writeConfigurationEdit(current, { rules });
+        }));
+    }
+
+    function saveConfigurationDraft(base, draft) {
+        return queueConfigurationWrite(runAsync(function* () {
+            const current = yield readConfiguration(), rules = [], order = {}, ai = {}, platforms = {};
+            for (const list of editableLists) {
+                const before = new Set(configList(base, list)), after = new Set(configList(draft, list));
+                for (const term of before) if (!after.has(term)) rules.push([list, term, false]);
+                for (const term of after) if (!before.has(term)) rules.push([list, term, true]);
+                const desired = Array.from(after);
+                const defaultOrder = Array.from(before).filter(term => after.has(term)).concat(desired.filter(term => !before.has(term)));
+                if (desired.some((term, index) => term !== defaultOrder[index])) order[list] = desired;
+            }
+            for (const key of Object.keys(draft.ai)) {
+                if (JSON.stringify(base.ai[key]) !== JSON.stringify(draft.ai[key])) ai[key] = draft.ai[key];
+            }
+            for (const name of Object.keys(draft.backupPlatforms)) {
+                const previous = base.backupPlatforms[name] || {}, next = draft.backupPlatforms[name];
+                for (const key of Object.keys(next)) if (JSON.stringify(previous[key]) !== JSON.stringify(next[key])) {
+                    if (!platforms[name]) platforms[name] = {};
+                    platforms[name][key] = next[key];
+                }
+            }
+            if (!rules.length && !Object.keys(order).length && !Object.keys(ai).length && !Object.keys(platforms).length && !current.warnings.length) return null;
+            const combined = { blocklist: new Set(current.blocklist), whitelist: new Set(current.whitelist) };
+            for (const [list, term, present] of rules) {
+                if (combined[list]) present ? combined[list].add(term) : combined[list].delete(term);
+            }
+            validateSharedFilters(Array.from(combined.blocklist), Array.from(combined.whitelist));
+            return yield writeConfigurationEdit(current, { rules, order, ai, platforms, repaired: current.warnings.length ? current.baseRevision : '' });
+        }));
+    }
+
+    function setRules(blocklist, whitelist, filters) {
+        const value = splitLegacyFilters({ blocklist: normalizeList(blocklist), whitelist: normalizeList(whitelist) }, filters);
+        blocklistArr = value.blocklist;
+        whitelistArr = value.whitelist;
+        keywordBlocks = new Set(blocklistArr);
+        keywordAllows = new Set(whitelistArr);
+        redditFilters = value.redditFilters;
+        redditSets = {};
+        for (const key of redditFilterKeys) redditSets[key] = new Set(redditFilters[key]);
         blockRules = compileRules(blocklistArr);
         whiteRules = compileRules(whitelistArr);
+        hasBlockRules = Boolean(blockRules.length || redditSets.subreddits.size || redditSets.users.size || redditSets.legacySubreddits.size);
         const epoch = ++ruleEpoch;
         postStates = new WeakMap();
         resetAI();
-        contextReady = (canRemember ? fingerprint(JSON.stringify([2, blocklistArr, whitelistArr])) : Promise.resolve('')).then(context => {
+        contextReady = (canRemember ? fingerprint(JSON.stringify([3, blocklistArr, whitelistArr, redditFilters])) : Promise.resolve('')).then(context => {
             if (epoch === ruleEpoch) ruleContext = context;
         });
         return contextReady;
@@ -383,17 +631,17 @@
         storageRefresh = (runAsync(function* () {
             do {
                 refreshAgain = false;
-                const epoch = configurationEpoch;
                 try {
                     const value = yield readConfiguration();
-                    if (epoch !== configurationEpoch) { refreshAgain = true; continue; }
                     if (value.warnings.length) reportIssue('settings', value.warnings.join('\n'));
                     else clearIssue('settings');
+                    if (value.rejectedEdits.size) reportIssue('filter-limit', 'One or more concurrent filter edits exceeded the list limit and were skipped.');
+                    else clearIssue('filter-limit');
                     if (value.revision !== settingsRevision) {
+                        yield setRules(value.blocklist, value.whitelist, value.redditFilters);
                         settingsRevision = value.revision;
                         settings.ai=value.ai; settings.backupPlatforms=value.backupPlatforms;
-                        yield setRules(value.blocklist, value.whitelist);
-                        if (epoch !== configurationEpoch) { refreshAgain = true; continue; }
+                        activeConfiguration = value;
                         if (document.body) collectPosts(document.body);
                         if (dialogElement) dialogElement.dispatchEvent(new Event('raf-remote-settings'));
                     }
@@ -494,12 +742,46 @@
 
     function getSubreddit(post) {
         const metadata = postMetadata(post);
-        let value = metadata.getAttribute('subreddit-prefixed-name') || metadata.getAttribute('subreddit-name');
-        if (!value) {
-            const link = [...post.querySelectorAll('a[data-click-id="subreddit"], .tagline a.subreddit, a[href^="/r/"]')].find(element => !element.closest(textAreas));
-            value = link && link.textContent || '';
+        const prefixed = (metadata.getAttribute('subreddit-prefixed-name') || metadata.getAttribute('data-subreddit-prefixed') || '').trim().toLowerCase();
+        if (prefixed.startsWith('u/') || /^(user|profile)$/i.test(metadata.getAttribute('subreddit-type') || metadata.getAttribute('data-subreddit-type') || '')) return '';
+        const name = redditName(prefixed.replace(/^r\//, ''), false) || redditName(metadata.getAttribute('subreddit-name') || metadata.getAttribute('data-subreddit'), false);
+        if (name) return name;
+        for (const link of post.querySelectorAll('a[data-click-id="subreddit"], .tagline a.subreddit, [slot="credit-bar"] a[href]')) {
+            if (!postCreditLink(link, metadata)) continue;
+            const match = redditPath(link.getAttribute('href')).match(/^\/r\/([^/]+)\/?$/i);
+            if (match && redditName(match[1], false)) return redditName(match[1], false);
         }
-        return value.trim().toLowerCase().replace(/^r\//, '');
+        const permalink = redditPath(metadata.getAttribute('permalink')).match(/^\/r\/([^/]+)\/comments\//i);
+        return permalink ? redditName(permalink[1], false) : '';
+    }
+
+    function redditPath(value) {
+        if (!value) return '';
+        try {
+            const url = new URL(value, location.href);
+            if (!/^https?:$/.test(url.protocol) || url.username || url.password || !/^(?:(?:www|old|new)\.)?reddit\.com$/.test(url.hostname)) return '';
+            return decodeURIComponent(url.pathname);
+        } catch (e) { return ''; }
+    }
+
+    function postCreditLink(link, metadata) {
+        if (link.closest(textAreas + ', shreddit-comment, .thing.comment, shreddit-crosspost, [slot="crosspost"]')) return false;
+        const card = link.closest('shreddit-post, .thing.link, [data-testid="post-container"]');
+        return !card || card === metadata;
+    }
+
+    function getAuthor(post) {
+        const metadata = postMetadata(post);
+        for (const value of [metadata.getAttribute('author'), metadata.getAttribute('data-author')]) {
+            const name = redditName((value || '').trim().replace(/^(?:u|user)\//i, ''), true);
+            if (name) return name;
+        }
+        for (const link of post.querySelectorAll('.tagline a.author, a[data-testid="post_author_link"], a[data-click-id="user"], a[slot="authorName"], [slot="credit-bar"] a[href]')) {
+            if (!postCreditLink(link, metadata)) continue;
+            const match = redditPath(link.getAttribute('href')).match(/^\/(?:u|user)\/([^/]+)\/?$/i);
+            if (match && redditName(match[1], true)) return redditName(match[1], true);
+        }
+        return '';
     }
 
     function getPostEvidence(post) {
@@ -541,13 +823,20 @@
         return parts.join('').toLowerCase();
     }
 
-    function filterDecision(title, content, subreddit) {
-        if (matchBlock(title.toLowerCase() + ' ' + content + ' r/' + subreddit, whiteRules) !== null) return null;
-        if (subreddit && (blocklistSet.has(subreddit) || blocklistSet.has('r/' + subreddit))) return { source: 'subreddit', trigger: subreddit };
-        const titleTrigger = matchBlock(title.toLowerCase(), blockRules);
-        if (titleTrigger) return { source: 'title', trigger: titleTrigger };
-        const trigger = matchBlock(content, blockRules);
-        return trigger ? { source: 'content', trigger } : null;
+    function allowPost(title, content, subreddit, author) {
+        return Boolean((subreddit && redditSets.allowSubreddits && redditSets.allowSubreddits.has(subreddit)) ||
+            (author && redditSets.allowUsers && redditSets.allowUsers.has(author)) ||
+            matchBlock(title.toLowerCase() + ' ' + content + (subreddit ? ' r/' + subreddit : ''), whiteRules) !== null);
+    }
+
+    function filterDecision(title, content, subreddit, author) {
+        if (allowPost(title, content, subreddit, author)) return null;
+        if (subreddit && (redditSets.subreddits.has(subreddit) || redditSets.legacySubreddits.has(subreddit))) return { source: 'subreddit', trigger: subreddit };
+        if (author && redditSets.users.has(author)) return { source: 'user', trigger: author };
+        const titleMatch = matchBlock(title.toLowerCase(), blockRules, true);
+        if (titleMatch) return Object.assign({ source: 'title' }, titleMatch);
+        const contentMatch = matchBlock(content, blockRules, true);
+        return contentMatch ? Object.assign({ source: 'content' }, contentMatch) : null;
     }
 
     const processPost = runAsync(function* (post) {
@@ -555,34 +844,35 @@
         const epoch = ruleEpoch, changes = postChanges.get(post) || 0;
         yield contextReady;
         if (epoch !== ruleEpoch) { queuePost(post); return; }
-        if (!blockRules.length && !settings.ai.enabled) { post.classList.remove('raf-filtered'); clearAIPanel(post); return; }
-        const title = getPostTitle(post), content = getPostText(post), subreddit = getSubreddit(post), identity = getPostIdentity(post), url = getPostLink(post, identity);
-        const signature = JSON.stringify([title, content, subreddit]), old = postStates.get(post);
+        if (!hasBlockRules && !settings.ai.enabled) { post.classList.remove('raf-filtered'); clearAIPanel(post); return; }
+        const data = getPostData(post), { title, content, subreddit, author, identity, url } = data;
+        const signature = JSON.stringify([title, content, subreddit, author]), old = postStates.get(post);
         const key = identity ? 'post:' + identity.id : (old && old.key) || Symbol('post');
         if (old && old.signature === signature && old.key === key && old.url === url && old.epoch === epoch) {
-            post.classList.toggle('raf-filtered', old.filtered); if(!old.filtered)void scheduleAI(post,getPostData(post),epoch); return;
+            post.classList.toggle('raf-filtered', old.filtered); if(!old.filtered)void scheduleAI(post,data,epoch); return;
         }
         clearAIPanel(post);
         const context = ruleContext, hash = canRemember && identity ? (yield fingerprint(signature)) : '';
         if (!post.isConnected || epoch !== ruleEpoch || changes !== (postChanges.get(post) || 0)) return;
         const memoryKey = identity && canRemember ? context + ':' + identity.id : '', cached = memoryKey && remembered.get(memoryKey);
-        const decision = cached && cached.fingerprint === hash && Date.now() - cached.at < cacheAge ? { source: cached.source, trigger: cached.trigger } : filterDecision(title, content, subreddit);
+        const decision = cached && cached.fingerprint === hash && Date.now() - cached.at < cacheAge ?
+            { source: cached.source, trigger: cached.trigger, rule: cached.rule } : filterDecision(title, content, subreddit, author);
         const provisional = !identity;
         if (old && old.provisional && old.key !== key && old.signature === signature) blockedPosts.delete(old.key);
         if (decision) {
-            blockedPosts.set(key, Object.assign({ title, url, subreddit }, decision));
+            blockedPosts.set(key, Object.assign({ title, url, subreddit, author }, decision));
             // shortcut: triggers over 5,000 characters are rechecked; use rule references if long-phrase caching becomes necessary.
             if (memoryKey && decision.trigger.length <= 5000 && (!cached || cached.fingerprint !== hash)) rememberBlock(memoryKey, Object.assign({ fingerprint: hash }, decision, { at: Date.now() }));
         }
         postStates.set(post, { signature, key, url, epoch, provisional, filtered: !!decision });
         post.classList.toggle('raf-filtered', !!decision);
-        if(decision){clearAIPanel(post);aiJobs.delete(post);}else void scheduleAI(post,getPostData(post),epoch);
+        if(decision){clearAIPanel(post);aiJobs.delete(post);}else void scheduleAI(post,data,epoch);
         updateCounterSoon();
     });
 
     function validCacheEntries(value) {
         if (!value || value.version !== 1 || !Array.isArray(value.entries)) throw new Error('Invalid remembered decisions.');
-        return value.entries.filter(entry => Array.isArray(entry) && typeof entry[0] === 'string' && /^[a-f0-9]{64}:[a-z0-9]+$/.test(entry[0]) && entry[1] && /^[a-f0-9]{64}$/.test(entry[1].fingerprint) && ['title', 'content', 'subreddit'].includes(entry[1].source) && typeof entry[1].trigger === 'string' && entry[1].trigger.length <= 5000 && Number.isFinite(entry[1].at) && entry[1].at <= Date.now() && Date.now() - entry[1].at < cacheAge).sort((a, b) => a[1].at - b[1].at).slice(-cacheLimit);
+        return value.entries.filter(entry => Array.isArray(entry) && typeof entry[0] === 'string' && /^[a-f0-9]{64}:[a-z0-9]+$/.test(entry[0]) && entry[1] && /^[a-f0-9]{64}$/.test(entry[1].fingerprint) && ['title', 'content', 'subreddit', 'user'].includes(entry[1].source) && typeof entry[1].trigger === 'string' && entry[1].trigger.length <= 5000 && Number.isFinite(entry[1].at) && entry[1].at <= Date.now() && Date.now() - entry[1].at < cacheAge).sort((a, b) => a[1].at - b[1].at).slice(-cacheLimit);
     }
 
     const loadMemory = runAsync(function* () {
@@ -630,7 +920,7 @@
     });
 
     function queuePost(post) {
-        if (!post || !post.isConnected || (!blockRules.length && !settings.ai.enabled && !post.classList.contains('raf-filtered') && !post.classList.contains('rafai-ai-hidden'))) return;
+        if (!post || !post.isConnected || (!hasBlockRules && !settings.ai.enabled && !post.classList.contains('raf-filtered') && !post.classList.contains('rafai-ai-hidden'))) return;
         postChanges.set(post, (postChanges.get(post) || 0) + 1); pendingPosts.add(post);
         if (!processing) { processing = true; setTimeout(() => void processPostsBatch(), 0); }
     }
@@ -672,7 +962,7 @@
             }
         });
         observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true,
-            attributeFilter: ['post-title', 'subreddit-prefixed-name', 'subreddit-name', 'permalink', 'content-href', 'href', 'id', 'data-fullname', 'name', 'slot', 'data-testid', 'class', 'src', 'srcset', 'alt', 'title', 'poster', 'subreddit-type', 'data-subreddit-type'] });
+            attributeFilter: ['post-title', 'author', 'data-author', 'subreddit-prefixed-name', 'subreddit-name', 'data-subreddit-prefixed', 'data-subreddit', 'permalink', 'content-href', 'href', 'id', 'data-fullname', 'name', 'slot', 'data-testid', 'class', 'src', 'srcset', 'alt', 'title', 'poster', 'subreddit-type', 'data-subreddit-type'] });
         return observer;
     }
 
@@ -682,9 +972,14 @@
         (document.head || document.documentElement).appendChild(style);
         yield refreshConfiguration(); yield loadMemory();
         if (!document.body) yield new Promise(resolve => { const observer = new MutationObserver(() => { if (document.body) { observer.disconnect(); resolve(); } }); observer.observe(document.documentElement, { childList: true, subtree: true }); });
-        startAI(); updateMenuEntry(); observePosts(); collectPosts(document.body);
-        if (typeof GM.addValueChangeListener === 'function') {
-            try { yield GM.addValueChangeListener(settingsKey, (_key, _old, _new, remote) => { if (remote) void refreshConfiguration(); }); }
+        startAI(); updateMenuEntry(); observePosts(); collectPosts(document.body); setupQuickFilters();
+        const listen = typeof GM.addValueChangeListener === 'function' ? GM.addValueChangeListener.bind(GM) :
+            (typeof GM_addValueChangeListener === 'function' ? GM_addValueChangeListener : null);
+        if (listen) {
+            try {
+                for (const key of [settingsKey, editSignal]) yield listen(key, (_key, _old, _new, remote) => { if (remote) void refreshConfiguration(); });
+                yield refreshConfiguration();
+            }
             catch (e) { console.warn('[Reddit Filter] Live settings sync is unavailable; settings refresh when the page regains focus.'); }
         }
         window.addEventListener('focus', () => void refreshConfiguration());
@@ -749,9 +1044,15 @@
         return Array.from(found).filter(position => index.needles[position].some(needle => searchable.indexOf(needle) !== -1 || searchablePhrases.indexOf(needle) !== -1)).sort((a, b) => a - b);
     }
     function compileRules(entries) {
-        const normalized = entries.map(entry => foldText(entry).trim()).filter(Boolean);
-        const rules = normalized.map(entry => {
-            if (/\s/.test(entry)) return { phrase: entry, normalizedPhrase: phraseText(entry) };
+        const normalized = [], rules = [];
+        for (const original of entries) {
+            const entry = foldText(original).trim();
+            if (!entry) continue;
+            normalized.push(entry);
+            if (/\s/.test(entry)) {
+                rules.push({ original, phrase: entry, normalizedPhrase: phraseText(entry) });
+                continue;
+            }
             const variants = [entry];
             // shortcut: regular English plurals only; enter irregular forms separately.
             if (/^[a-z]+$/.test(entry)) {
@@ -759,24 +1060,26 @@
                 else if (/(s|x|z|ch|sh)$/.test(entry)) variants.push(entry + 'es');
                 else variants.push(entry + 's');
             }
-            return { source: '(^|[^\\p{L}\\p{N}_])(' + variants.map(escapeRegex).join('|') + ')(?=$|[^\\p{L}\\p{N}_])' };
-        });
+            rules.push({ original, source: '(^|[^\\p{L}\\p{N}_])(' + variants.map(escapeRegex).join('|') + ')(?=$|[^\\p{L}\\p{N}_])' });
+        }
         rules.index = buildMatchIndex(normalized);
         return rules;
     }
 
-    function matchBlock(text, rules) {
+    function matchBlock(text, rules, withRule) {
         text = foldText(text);
         const phrases = phraseText(text);
         for (const position of matchCandidates(text, phrases, rules.index || new Map())) {
             const rule = rules[position];
+            let trigger;
             if (rule.phrase !== undefined) {
-                if (text.includes(rule.phrase) || phrases.includes(rule.normalizedPhrase)) return rule.phrase;
+                if (text.includes(rule.phrase) || phrases.includes(rule.normalizedPhrase)) trigger = rule.phrase;
             } else {
                 if (!rule.regex) rule.regex = new RegExp(rule.source, 'iu');
                 const match = rule.regex.exec(text);
-                if (match) return match[2];
+                if (match) trigger = match[2];
             }
+            if (trigger) return withRule ? { trigger, rule: rule.original } : trigger;
         }
         return null;
     }
@@ -813,6 +1116,147 @@
         return node;
     }
 
+    const postTextSurface = textAreas + ', [slot="title"], [data-testid="post-title"], a.title, h1, h2, h3, h4, h5, h6';
+    let quickMenu = null, quickAnchor = null, quickFeedback = null;
+
+    function selectedKeyword(post, target, selection) {
+        if (!selection || selection.isCollapsed || selection.rangeCount !== 1) return '';
+        const range = selection.getRangeAt(0);
+        const surfaceAt = node => {
+            const element = node.nodeType === 1 ? node : node.parentElement;
+            if (!element || element.closest(interfaceText + ', .tagline, [slot="credit-bar"], shreddit-comment, .thing.comment')) return null;
+            return element.closest(postTextSurface);
+        };
+        const surface = surfaceAt(range.startContainer);
+        if (!surface || !post.contains(surface) || !surface.contains(target) || surface !== surfaceAt(range.endContainer)) return '';
+        const term = selection.toString().trim().replace(/\s+/g, ' ').toLowerCase();
+        return term.length <= 10000 ? term : '';
+    }
+
+    function quickTargets(subreddit, author, keyword) {
+        const targets = [];
+        if (typeof keyword === 'string' && keyword) targets.push({ term: keyword, label: '“' + (keyword.length > 80 ? keyword.slice(0, 79) + '…' : keyword) + '”', block: 'blocklist', allow: 'whitelist' });
+        if (subreddit) targets.push({ term: subreddit, label: 'r/' + subreddit, block: 'subreddits', allow: 'allowSubreddits' });
+        if (author) targets.push({ term: author, label: 'u/' + author, block: 'users', allow: 'allowUsers' });
+        return targets;
+    }
+
+    function closeQuickMenu(restoreFocus) {
+        if (!quickMenu) return;
+        quickMenu.remove();
+        if (restoreFocus && quickAnchor && quickAnchor.isConnected) quickAnchor.focus({ preventScroll: true });
+        quickMenu = quickAnchor = null;
+    }
+
+    function showQuickFeedback(message, undo) {
+        const parent = dialogElement && dialogElement.open ? dialogElement : document.body;
+        if (!quickFeedback || quickFeedback.parentNode !== parent) {
+            quickFeedback = uiNode('div', 'raf-quick-feedback');
+            quickFeedback.dataset.redditFilterUi = 'true';
+            parent.append(quickFeedback);
+        }
+        const container = quickFeedback, entry = uiNode('div'), status = uiNode('span', '', message);
+        status.setAttribute('role', 'status');
+        entry.append(status);
+        if (undo) {
+            const button = uiNode('button', '', 'Undo');
+            button.type = 'button';
+            button.addEventListener('click', () => { button.disabled = true; undo(); expire(); });
+            entry.append(button);
+        }
+        function expire() {
+            entry.remove();
+            if (!container.childElementCount) { container.remove(); if (quickFeedback === container) quickFeedback = null; }
+        }
+        let timer;
+        const schedule = () => { clearTimeout(timer); timer = setTimeout(expire, 12000); };
+        const pause = () => clearTimeout(timer);
+        for (const event of ['mouseenter', 'focusin']) entry.addEventListener(event, pause);
+        for (const event of ['mouseleave', 'focusout']) entry.addEventListener(event, schedule);
+        container.append(entry);
+        schedule();
+    }
+
+    function openQuickMenu(targets, x, y, anchor) {
+        closeQuickMenu(false);
+        const menu = quickMenu = uiNode('div', 'raf-quick-menu');
+        quickAnchor = anchor;
+        menu.dataset.redditFilterUi = 'true';
+        menu.setAttribute('role', 'group'); menu.setAttribute('aria-label', 'Reddit filters');
+        function action(label, handler) {
+            const button = uiNode('button', '', label);
+            button.type = 'button';
+            button.addEventListener('click', () => { closeQuickMenu(false); handler(); });
+            menu.append(button);
+        }
+        for (const item of targets) {
+            for (const list of [item.block, item.allow]) {
+                const allow = list === item.allow;
+                const term = item.term;
+                const present = list === 'blocklist' ? keywordBlocks.has(term) : list === 'whitelist' ? keywordAllows.has(term) :
+                    (redditSets[list] && redditSets[list].has(term)) || (list === 'subreddits' && redditSets.legacySubreddits && redditSets.legacySubreddits.has(term));
+                const label = present ? (allow ? 'Remove from allowlist: ' : 'Unblock ') : (allow ? 'Allow ' : 'Block ');
+                action(label + item.label, () => {
+                    editFilter(list, term, !present).then(id => {
+                        if (!id) { showQuickFeedback('This filter already changed. Open the menu again.'); return; }
+                        const message = present ? (allow ? 'Removed from allowlist: ' : 'Unblocked ') : (allow ? 'Allowed ' : 'Blocked ');
+                        showQuickFeedback(message + item.label, () => {
+                            undoFilter(id).then(undone => {
+                                showQuickFeedback(undone ? 'Undid filter change.' : 'This filter changed again. Undo skipped.');
+                            }).catch(error => showQuickFeedback(error.message));
+                        });
+                    }).catch(error => showQuickFeedback(error.message));
+                });
+            }
+        }
+        if (!dialogElement) action('Manage filters', showConfig);
+        (dialogElement && dialogElement.open ? dialogElement : document.body).append(menu);
+        const rect = menu.getBoundingClientRect();
+        menu.style.left = Math.max(8, Math.min(x, innerWidth - rect.width - 8)) + 'px';
+        menu.style.top = Math.max(8, Math.min(y, innerHeight - rect.height - 8)) + 'px';
+        menu.firstElementChild.focus({ preventScroll: true });
+    }
+
+    function setupQuickFilters() {
+        document.addEventListener('contextmenu', event => {
+            closeQuickMenu(false);
+            const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
+            const target = path.find(node => node.nodeType === 1 && node.isConnected);
+            if (!target || event.defaultPrevented || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey ||
+                path.some(node => node.nodeType === 1 && (node.isContentEditable ||
+                    node.matches(interfaceText + ', input, textarea, select, video, audio, img, [role="textbox"], shreddit-comment, .thing.comment')))) return;
+            const post = path.reduce((found, node) => found || (node.nodeType === 1 && findPost(node)), null);
+            if (!post || !getPostIdentity(post)) return;
+            const keyword = selectedKeyword(post, target, window.getSelection());
+            if (!keyword && path.some(node => node.nodeType === 1 && node.matches('a[href]'))) return;
+            const targets = quickTargets(getSubreddit(post), getAuthor(post), keyword);
+            if (!targets.length) return;
+            event.preventDefault();
+            const rect = target.getBoundingClientRect();
+            openQuickMenu(targets, event.clientX || rect.left, event.clientY || rect.bottom, document.activeElement);
+        });
+        document.addEventListener('pointerdown', event => {
+            if (quickMenu && !quickMenu.contains(event.target)) closeQuickMenu(false);
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && quickMenu) { event.preventDefault(); event.stopPropagation(); closeQuickMenu(true); }
+            if (event.defaultPrevented || event.key !== 'F10' || !event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey) return;
+            const target = event.target;
+            if (!target || target.nodeType !== 1 || target.isContentEditable || target.closest('input, textarea, select, [role="textbox"], shreddit-comment, .thing.comment')) return;
+            const post = findPost(target);
+            if (!post || !getPostIdentity(post)) return;
+            const targets = quickTargets(getSubreddit(post), getAuthor(post), selectedKeyword(post, target, window.getSelection()));
+            if (!targets.length) return;
+            event.preventDefault();
+            const rect = target.getBoundingClientRect();
+            openQuickMenu(targets, rect.left, rect.bottom, target);
+        }, true);
+        window.addEventListener('scroll', event => {
+            if (quickMenu && event.target !== quickMenu) closeQuickMenu(false);
+        }, { capture: true, passive: true });
+        window.addEventListener('resize', () => closeQuickMenu(false));
+    }
+
     function currentTheme() {
         for (const node of [document.documentElement, document.body]) {
             if (!node) continue;
@@ -831,6 +1275,42 @@
         yield refreshConfiguration();
         createConfig();
     });
+
+    const filterEditors = [
+        ['blocklist', 'block', 'Blocked keywords', 'One word or phrase per line.'],
+        ['subreddits', 'subreddits', 'Blocked subreddits', 'One subreddit per line. The r/ prefix is optional.'],
+        ['users', 'users', 'Blocked users', 'One Reddit username per line. The u/ prefix is optional.'],
+        ['whitelist', 'white', 'Allowlist', 'Use r/ for subreddits and u/ for users. Plain text allows words or phrases. Use a backslash before a literal prefix.']
+    ];
+
+    function allowlistText(config) {
+        return config.whitelist.map(term => /^(?:[ru]\/|\\)/.test(term) ? '\\' + term : term)
+            .concat(config.redditFilters.allowSubreddits.map(term => 'r/' + term), config.redditFilters.allowUsers.map(term => 'u/' + term));
+    }
+
+    function readAllowlist(text) {
+        const result = { whitelist: [], allowSubreddits: [], allowUsers: [] };
+        for (const line of text.split('\n')) {
+            const term = line.trim().toLowerCase();
+            if (term.startsWith('\\')) result.whitelist.push(term.slice(1));
+            else if (term.startsWith('r/')) result.allowSubreddits.push(term.slice(2));
+            else if (term.startsWith('u/')) result.allowUsers.push(term.slice(2));
+            else result.whitelist.push(term);
+        }
+        return result;
+    }
+
+    function backupFilterDraft(backup, currentFilters) {
+        const options = backup.platforms.reddit || {};
+        const value = { blocklist: backup.shared.blocklist, whitelist: backup.shared.allowlist };
+        if (options.filters) return splitLegacyFilters(value, options.filters);
+        if (backup.source === 'bluesky') return splitLegacyFilters(value, currentFilters);
+        splitLegacyFilters(value);
+        if (!backup.source) {
+            for (const key of redditFilterKeys) value.redditFilters[key] = Array.from(new Set(currentFilters[key].concat(value.redditFilters[key])));
+        }
+        return splitLegacyFilters(value, value.redditFilters);
+    }
 
     function createConfig() {
         if (dialogElement) return;
@@ -853,22 +1333,17 @@
                 <div class="raf-body">
                     <p id="raf-errors" class="raf-status raf-info" role="alert" data-error="true" hidden></p>
                     <section id="raf-panel-filters" role="tabpanel" aria-labelledby="raf-tab-filters">
-                        <div class="raf-editors">
-                            <div class="raf-editor">
-                                <div class="raf-field-title"><label for="raf-blocklist">Blocklist</label><span class="raf-help" id="raf-block-count" aria-live="polite"></span></div>
-                                <p class="raf-help" id="raf-block-help">One keyword, phrase, or subreddit per line.</p>
-                                <textarea id="raf-blocklist" data-raf-draft spellcheck="false" aria-describedby="raf-block-help raf-block-count raf-blocklist-page"></textarea>
-                                <div id="raf-blocklist-pages" class="raf-pager raf-editor-pages" hidden><button id="raf-blocklist-previous-page" type="button" aria-label="Previous page of blocklist">Previous page</button><span id="raf-blocklist-page" class="raf-help" role="status"></span><button id="raf-blocklist-next-page" type="button" aria-label="Next page of blocklist">Next page</button></div>
-                                <div class="raf-find"><input type="search" id="raf-block-search" aria-label="Find in blocklist" placeholder="Find in blocklist"><button type="button" id="raf-block-next">Next match</button></div>
-                            </div>
-                            <div class="raf-editor">
-                                <div class="raf-field-title"><label for="raf-whitelist">Whitelist</label><span class="raf-help" id="raf-white-count" aria-live="polite"></span></div>
-                                <p class="raf-help" id="raf-white-help">One entry per line. Overrides blocking rules.</p>
-                                <textarea id="raf-whitelist" data-raf-draft spellcheck="false" aria-describedby="raf-white-help raf-white-count raf-whitelist-page"></textarea>
-                                <div id="raf-whitelist-pages" class="raf-find" hidden><button id="raf-whitelist-previous-page" type="button" aria-label="Previous page of whitelist">Previous page</button><span id="raf-whitelist-page" class="raf-help" role="status"></span><button id="raf-whitelist-next-page" type="button" aria-label="Next page of whitelist">Next page</button></div>
-                                <div class="raf-find"><input type="search" id="raf-white-search" aria-label="Find in whitelist" placeholder="Find in whitelist"><button type="button" id="raf-white-next">Next match</button></div>
-                            </div>
+                        <div class="raf-row raf-history-tabs" role="tablist" id="raf-filter-tabs" aria-label="Filter lists">
+                            ${filterEditors.map(([key, prefix, label], index) => `<button type="button" role="tab" id="raf-filter-tab-${prefix}" aria-controls="raf-filter-panel-${prefix}" aria-selected="${index === 0}" tabindex="${index ? -1 : 0}">${label}</button>`).join('')}
                         </div>
+                        ${filterEditors.map(([key, prefix, label, help], index) => `
+                            <div class="raf-editor" role="tabpanel" id="raf-filter-panel-${prefix}" aria-labelledby="raf-filter-tab-${prefix}" ${index ? 'hidden' : ''}>
+                                <div class="raf-field-title"><label for="raf-${key}">${label}</label><span class="raf-help" id="raf-${prefix}-count" aria-live="polite"></span></div>
+                                <p class="raf-help" id="raf-${prefix}-help">${help}</p>
+                                <textarea id="raf-${key}" data-raf-draft spellcheck="false" aria-describedby="raf-${prefix}-help raf-${prefix}-count raf-${key}-page"></textarea>
+                                <div id="raf-${key}-pages" class="raf-pager raf-editor-pages" hidden><button id="raf-${key}-previous-page" type="button">Previous page</button><span id="raf-${key}-page" class="raf-help" role="status"></span><button id="raf-${key}-next-page" type="button">Next page</button></div>
+                                <div class="raf-find"><input type="search" id="raf-${prefix}-search" aria-label="Find in ${label.toLowerCase()}" placeholder="Find in ${label.toLowerCase()}"><button type="button" id="raf-${prefix}-next">Next match</button></div>
+                            </div>`).join('')}
                         <div class="raf-group">
                             <h3><label for="raf-preview">Test a keyword rule</label></h3>
                             <p class="raf-help" id="raf-preview-help">Try a sample title against your draft lists. Subreddits are checked on real posts.</p>
@@ -885,7 +1360,7 @@
                         </div>
                         <div id="raf-history-blocked-panel" role="tabpanel" aria-labelledby="raf-history-blocked-tab">
                             <label for="raf-history-search" id="raf-history-heading">Search blocked posts</label>
-                            <input type="search" id="raf-history-search" placeholder="Title, subreddit, or reason">
+                            <input type="search" id="raf-history-search" placeholder="Title, subreddit, author, or reason">
                             <ul id="raf-history" class="raf-history"></ul>
                             <div class="raf-pager"><button type="button" id="raf-previous">Previous</button><span id="raf-page" class="raf-help" role="status"></span><button type="button" id="raf-next">Next</button></div>
                         </div>
@@ -911,18 +1386,36 @@
                     <div class="raf-row"><button type="button" id="raf-cancel">Close</button><button type="button" id="raf-save" class="raf-primary">Save changes</button></div>
                 </footer>
             </div>`;
-        const find = id => dialog.querySelector('#' + id), blockInput = find('raf-blocklist'), whiteInput = find('raf-whitelist');
-        const blockEditor = createPagedEditor(find('raf-blocklist'), find('raf-blocklist-previous-page'), find('raf-blocklist-next-page'), find('raf-blocklist-page'), find('raf-blocklist-pages'));
-        const allowEditor = createPagedEditor(find('raf-whitelist'), find('raf-whitelist-previous-page'), find('raf-whitelist-next-page'), find('raf-whitelist-page'), find('raf-whitelist-pages'));
-        blockEditor.setText(blocklistArr.join('\n')); allowEditor.setText(whitelistArr.join('\n'));
-        let baseRevision = settingsRevision, page = 0, saving = false, dirty = false, previewTimer = null;
+        const find = id => dialog.querySelector('#' + id), models = {};
+        let base = activeConfiguration || splitLegacyFilters({ blocklist: [], whitelist: [], ai: validateAI(), backupPlatforms: {} });
+        for (const [key] of filterEditors) {
+            const id = 'raf-' + key;
+            models[key] = createPagedEditor(find(id), find(id + '-previous-page'), find(id + '-next-page'), find(id + '-page'), find(id + '-pages'));
+        }
+        function loadFilterEditors(config) {
+            for (const [key] of filterEditors) models[key].setText((key === 'whitelist' ? allowlistText(config) : configList(config, key)).join('\n'));
+        }
+        loadFilterEditors(base);
+        let page = 0, saving = false, dirty = false, previewTimer = null;
         let draftPlatforms = preservePlatformSettings(settings.backupPlatforms);
+        let draftLegacy = base.redditFilters.legacySubreddits;
         let previewSignature = '', previewBlock = [], previewWhite = [];
         const body = dialog.querySelector('.raf-body');
-        const selectTab = setupTabs(find('raf-settings-tabs'), () => { body.scrollTop = 0; });
+        const selectTab = setupTabs(find('raf-settings-tabs'), () => { body.scrollTop = 0; closeQuickMenu(false); });
+        setupTabs(find('raf-filter-tabs'));
         setupTabs(find('raf-history-tabs'));
         const draftAI = mountAISettings(dialog, beginOperation, endOperation, status);
-        const draft = () => validateConfig({ blocklist: blockEditor.getText().split('\n'), whitelist: allowEditor.getText().split('\n'), ai:draftAI(), backupPlatforms:draftPlatforms });
+        const draft = () => {
+            const allowed = readAllowlist(models.whitelist.getText());
+            return validateConfig({
+                blocklist: models.blocklist.getText().split('\n'), whitelist: allowed.whitelist, ai: draftAI(), backupPlatforms: draftPlatforms,
+                redditFilters: {
+                    subreddits: models.subreddits.getText().split('\n').map(term => term.trim().replace(/^r\//i, '')),
+                    users: models.users.getText().split('\n').map(term => term.trim().replace(/^u\//i, '')),
+                    allowSubreddits: allowed.allowSubreddits, allowUsers: allowed.allowUsers, legacySubreddits: draftLegacy
+                }
+            });
+        };
         function status(message, error = false) { find('raf-save-status').textContent = message; find('raf-save-status').dataset.error = String(error); }
 
         function setupTabs(tabList, onChange) {
@@ -973,14 +1466,14 @@
             const message = [...issues.values()].join('\n'), errors = find('raf-errors');
             errors.hidden = !message;
             if (errors.textContent !== message) errors.textContent = message;
-            const text = remembered.size.toLocaleString() + ' remembered keyword and subreddit blocks.';
+            const text = remembered.size.toLocaleString() + ' remembered keyword, subreddit, and author blocks.';
             if (find('raf-memory-status').textContent !== text) find('raf-memory-status').textContent = text;
         };
 
         refreshHistory = () => {
             if (dialogElement !== dialog) return;
             const query = find('raf-history-search').value.trim().toLowerCase();
-            const rows = [...blockedPosts.values()].reverse().filter(row => !query || [row.title, row.subreddit, row.source, row.trigger, row.evidence||''].join(' ').toLowerCase().includes(query));
+            const rows = [...blockedPosts.values()].reverse().filter(row => !query || [row.title, row.subreddit, row.author, row.source, row.trigger, row.evidence||''].join(' ').toLowerCase().includes(query));
             const pages = Math.max(1, Math.ceil(rows.length / historyPageSize)); page = Math.min(page, pages - 1);
             const fragment = document.createDocumentFragment();
             for (const row of rows.slice(page * historyPageSize, (page + 1) * historyPageSize)) {
@@ -988,6 +1481,16 @@
                 if (url) { title.href = url; title.target = '_blank'; title.rel = 'noopener noreferrer'; }
                 item.append(title, uiNode('p', 'raf-help', (row.subreddit ? 'r/' + row.subreddit + ' · ' : '') + row.source + ': “' + row.trigger + '”'));
                 if(row.evidence)item.append(uiNode('p','raf-help',row.evidence));
+                const targets = quickTargets(row.subreddit, row.author, row.rule);
+                if (targets.length) {
+                    const button = uiNode('button', '', 'Post filters');
+                    button.type = 'button';
+                    button.addEventListener('click', () => {
+                        const rect = button.getBoundingClientRect();
+                        openQuickMenu(targets, rect.left, rect.bottom, button);
+                    });
+                    item.append(button);
+                }
                 fragment.append(item);
             }
             if (!rows.length) fragment.append(uiNode('li', 'raf-help', query ? 'No blocked posts match this search.' : 'No posts blocked yet. New blocks will appear here.'));
@@ -1002,11 +1505,11 @@
             const result = find('raf-preview-result');
             result.hidden = !text.trim();
             if (result.hidden) return;
-            const signature = JSON.stringify([blockEditor.getText(), allowEditor.getText()]);
+            const signature = JSON.stringify([models.blocklist.getText(), models.whitelist.getText()]);
             try {
                 if (signature !== previewSignature) {
-                    previewBlock = compileRules(normalizeList(blockEditor.getText().split('\n')));
-                    previewWhite = compileRules(normalizeList(allowEditor.getText().split('\n')));
+                    previewBlock = compileRules(normalizeList(models.blocklist.getText().split('\n')));
+                    previewWhite = compileRules(normalizeList(readAllowlist(models.whitelist.getText()).whitelist));
                     previewSignature = signature;
                 }
                 const white = matchBlock(text, previewWhite), block = matchBlock(text, previewBlock);
@@ -1035,7 +1538,7 @@
             next.addEventListener('click', () => model.findNext(search.value));
             update(); return update;
         }
-        const updateBlock = setupEditor('raf-block', blockInput, blockEditor), updateWhite = setupEditor('raf-white', whiteInput, allowEditor);
+        const updateEditors = filterEditors.map(([key, prefix]) => setupEditor('raf-' + prefix, find('raf-' + key), models[key]));
         function beginOperation(message) {
             if (saving || dialogElement !== dialog) return null;
             saving = true;
@@ -1048,7 +1551,8 @@
             saving = false;
             if (dialogElement !== dialog) return;
             for (const [control, disabled] of states) control.disabled = disabled;
-            updateBlock(); updateWhite(); refreshHistory(); updateAIStatus();
+            for (const update of updateEditors) update();
+            refreshHistory(); updateAIStatus();
         }
         find('raf-preview').addEventListener('input', renderPreview);
         dialog.addEventListener('input', event => {
@@ -1072,15 +1576,29 @@
             }
         });
         dialog.addEventListener('close', () => {
-            clearTimeout(previewTimer); dialog.remove();
+            clearTimeout(previewTimer); closeQuickMenu(false); dialog.remove();
             if (dialogElement === dialog) { dialogElement = null; refreshHistory = refreshStatus = null; }
             if (previousFocus && previousFocus.isConnected) previousFocus.focus();
         });
-        dialog.addEventListener('raf-remote-settings', () => status(dirty ? 'Settings changed in another tab. Export these edits, then close and reopen before saving.' : 'Settings changed in another tab. Close and reopen to see the latest lists.', true));
+        dialog.addEventListener('raf-remote-settings', () => {
+            if (saving) return;
+            if (dirty || find('rafai-ai-key').value.trim()) {
+                status('Saved filters changed. Saving applies only changes made in this draft.');
+                return;
+            }
+            base = activeConfiguration;
+            loadFilterEditors(base);
+            applyAIDraft(dialog, base.ai);
+            draftLegacy = base.redditFilters.legacySubreddits;
+            draftPlatforms = preservePlatformSettings(base.backupPlatforms);
+            for (const update of updateEditors) update();
+            renderPreview();
+            status('Showing current saved filters.');
+        });
         find('raf-history-search').addEventListener('input', () => { page = 0; refreshHistory(); });
         find('raf-previous').addEventListener('click', () => { page--; refreshHistory(); }); find('raf-next').addEventListener('click', () => { page++; refreshHistory(); });
         find('raf-clear-memory').addEventListener('click', runAsync(function* () {
-            if (!window.confirm('Clear remembered keyword and subreddit blocks? Your lists and session history will be kept.')) return;
+            if (!window.confirm('Clear remembered keyword, subreddit, and author blocks? Your lists and session history will be kept.')) return;
             const states = beginOperation('Clearing remembered blocks...'); if (!states) return;
             try { yield clearMemory(); refreshStatus(); status('Remembered decisions cleared. Your lists and session history were kept.'); }
             catch (e) { status('Could not clear remembered decisions. Check userscript storage and try again.', true); }
@@ -1104,9 +1622,12 @@
                 const backup = parseBackup(yield file.text());
                 if (dialogElement !== dialog) return;
                 const options = backup.platforms.reddit || {};
+                const imported = backupFilterDraft(backup, base.redditFilters);
                 const platforms = mergePlatformSettings(draftPlatforms, backup.platforms);
+                if (platforms.reddit) delete platforms.reddit.filters;
                 if (dirty && !window.confirm('Replace your unsaved draft with this backup?')) return;
-                blockEditor.setText(backup.shared.blocklist.join('\n')); allowEditor.setText(backup.shared.allowlist.join('\n'));
+                loadFilterEditors(imported);
+                draftLegacy = imported.redditFilters.legacySubreddits;
                 if (options.ai) applyAIDraft(dialog, options.ai);
                 if (backup.shared.aiTopics !== undefined) find('rafai-ai-topics').value = backup.shared.aiTopics.join('\n');
                 draftPlatforms = platforms;
@@ -1136,21 +1657,8 @@
             try {
                 const value = draft();
                 controlStates = beginOperation('Checking saved settings...'); if (!controlStates) return;
-                configurationEpoch++;
-                const current = yield readConfiguration();
-                if (current.revision !== baseRevision) throw new Error('Settings changed in another tab. Export these edits, then close and reopen before saving.');
-                status('Saving changes...');
-                const revision = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16).padStart(8, '0')).join('');
-                const snapshot = Object.assign({ version: 1, revision }, value);
-                yield GM.setValue(settingsKey, snapshot);
-                if (JSON.stringify(yield GM.getValue(settingsKey, null)) !== JSON.stringify(snapshot)) throw new Error('Storage verification failed. Export your draft and retry; saved data may be incomplete.');
-                configurationEpoch++;
-                settingsRevision = baseRevision = revision;
-                settings.ai=value.ai; settings.backupPlatforms=value.backupPlatforms;
-                yield setRules(value.blocklist, value.whitelist);
-                clearIssue('settings'); clearIssue('load'); collectPosts(document.body);
+                yield saveConfigurationDraft(base, value);
                 dirty = false;
-                status(settingsRevision === revision ? 'Saved. Filters updated without reloading the page.' : 'Saved, but newer settings arrived from another tab. Close and reopen to review them.', settingsRevision !== revision);
                 updateCounterSoon();
                 saving=false;dialog.close();
             } catch (error) { status('Could not save. ' + error.message + ' Your edits are still here.', true); }
@@ -1591,8 +2099,8 @@ function aiEligible(post){
   const metadata=postMetadata(post);
   return metadata.getAttribute('subreddit-type')!=='private'&&!post.querySelector('[data-subreddit-type="private"], [subreddit-type="private"]');
 }
-function aiAllowed(post,data){return matchBlock(data.title.toLowerCase()+' '+data.content+' r/'+data.subreddit,whiteRules)!==null;}
-function getPostData(post){return {title:getPostTitle(post),content:getPostText(post),subreddit:getSubreddit(post),identity:getPostIdentity(post),url:getPostLink(post)};}
+function aiAllowed(post,data){return allowPost(data.title,data.content,data.subreddit,data.author);}
+function getPostData(post){return {title:getPostTitle(post),content:getPostText(post),subreddit:getSubreddit(post),author:getAuthor(post),identity:getPostIdentity(post),url:getPostLink(post)};}
 function aiText(post,legacyKeep=false){
   const data=getPostData(post),parts=[data.title,'Subreddit: r/'+data.subreddit];
   const bodies=[...post.querySelectorAll(textAreas)].filter(node=>!(node.parentElement&&node.parentElement.closest(textAreas)));

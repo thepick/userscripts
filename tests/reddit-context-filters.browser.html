@@ -1,0 +1,192 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Reddit context filter tests</title>
+<h1>Reddit context filter tests</h1>
+<pre id="results">Running…</pre>
+<script>
+const results = document.querySelector('#results');
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+function check(condition, message) { if (!condition) throw new Error(message); }
+async function until(condition, message) {
+    for (let attempt = 0; attempt < 200; attempt++) {
+        if (condition()) return;
+        await pause(20);
+    }
+    throw new Error(message);
+}
+
+const modernCard = `
+    <article><shreddit-post id="t3_modern" author="Writer" subreddit-prefixed-name="r/Science">
+        <div slot="credit-bar"><a href="/r/Science/">r/Science</a></div>
+        <h2 slot="title">Space telescopes</h2>
+        <div slot="text-body"><p id="modern">Rare <em>space</em> signal</p><a id="native" href="/user/other/">A reference</a></div>
+        <shreddit-crosspost><a data-testid="post_author_link" href="/user/crosspost/">Crosspost author</a></shreddit-crosspost>
+        <textarea id="editable"></textarea>
+    </shreddit-post></article>`;
+const oldCard = `
+    <div class="thing link" data-fullname="t3_classic">
+        <p class="tagline"><a class="author" href="https://old.reddit.com/user/ClassicWriter/">ClassicWriter</a> in <a class="subreddit" href="https://old.reddit.com/r/Space/">space</a></p>
+        <a class="title" href="/r/Space/comments/classic/">A comet</a>
+        <div class="usertext-body"><div class="md"><p id="classic">Telescope logs</p></div></div>
+    </div>`;
+
+(async () => {
+    const source = await fetch('/reddit-advanced-content-filter.user.js').then(response => response.text());
+    const values = new Map(), listeners = new Map();
+    let writes = 0;
+    async function openFrame(markup) {
+        const frame = document.createElement('iframe');
+        frame.style = 'width:900px;height:600px';
+        document.body.append(frame);
+        const w = frame.contentWindow, d = w.document;
+        d.open();
+        d.write('<!doctype html><main>' + markup + '</main><div style="height:1400px"></div>');
+        d.close();
+        const getValue = (key, fallback) => values.has(key) ? structuredClone(values.get(key)) : fallback;
+        const setValue = (key, value) => {
+            writes++;
+            const previous = values.get(key);
+            values.set(key, structuredClone(value));
+            for (const {sender, fn} of listeners.get(key) || []) fn(key, previous, value, sender !== w);
+        };
+        let settings;
+        Object.assign(w, {
+            GM_getValue: getValue, GM_setValue: setValue,
+            GM_registerMenuCommand: (_label, callback) => { settings = callback; return 1; },
+            GM_unregisterMenuCommand() {},
+            GM_xmlhttpRequest() { throw new Error('Unexpected network request'); },
+            GM: {
+                getValue, setValue, listValues: () => Array.from(values.keys()),
+                addValueChangeListener(key, fn) {
+                    if (!listeners.has(key)) listeners.set(key, []);
+                    listeners.get(key).push({sender: w, fn});
+                }
+            }
+        });
+        const script = d.createElement('script');
+        script.textContent = source;
+        d.body.append(script);
+        await until(() => settings && (listeners.get('rafaiFilterEditSignal') || []).some(listener => listener.sender === w), 'Startup or listener failed');
+        const context = target => target.dispatchEvent(new w.MouseEvent('contextmenu', {bubbles: true, cancelable: true, composed: true, clientX: 180, clientY: 100}));
+        const menu = () => Array.from(d.querySelectorAll('.raf-quick-menu button'));
+        const choose = label => {
+            const button = menu().find(item => item.textContent === label);
+            check(button, 'Missing action ' + label + ' in ' + menu().map(item => item.textContent).join(', '));
+            button.click();
+        };
+        const hidden = () => Boolean(d.querySelector('.raf-filtered'));
+        return {d, w, frame, context, menu, choose, hidden, open: () => settings(), get: id => d.getElementById(id)};
+    }
+
+    const modern = await openFrame(modernCard), old = await openFrame(oldCard);
+    check(modern.context(modern.get('native')), 'Unselected links retain native right-click');
+    check(modern.context(modern.get('editable')), 'Text inputs retain native right-click');
+    check(modern.context(modern.d.body), 'Off-post right-click remains native');
+    const shadowWidget = modern.d.createElement('div');
+    const shadowComment = modern.d.createElement('shreddit-comment');
+    for (const host of [shadowWidget, shadowComment]) {
+        const inside = modern.d.createElement('span');
+        host.attachShadow({mode: 'open'}).append(inside);
+        modern.d.querySelector('shreddit-post').append(host);
+    }
+    check(!modern.context(shadowWidget.shadowRoot.firstElementChild), 'Open shadow DOM did not resolve its post');
+    check(modern.context(shadowComment.shadowRoot.firstElementChild), 'Shadow comment did not retain native right-click');
+    const text = modern.get('modern'), range = modern.d.createRange(), selection = modern.w.getSelection();
+    range.selectNodeContents(text);
+    selection.addRange(range);
+    check(writes === 0, 'Selection itself saved a rule');
+    check(!modern.context(text), 'Post text opens contextual menu');
+    modern.choose('Block “rare space signal”');
+    await until(modern.hidden, 'Selected phrase did not hide the card');
+    const undo = () => Array.from(modern.d.querySelectorAll('.raf-quick-feedback button')).at(-1);
+    await until(() => undo(), 'Missing Undo');
+    undo().click();
+    await until(() => !modern.hidden(), 'Undo did not restore the card');
+    selection.removeAllRanges();
+
+    modern.context(text);
+    modern.choose('Block r/science');
+    await until(modern.hidden, 'Subreddit action did not hide the matching post');
+    const similar = modern.d.createElement('shreddit-post');
+    similar.id = 't3_similar';
+    similar.setAttribute('subreddit-prefixed-name', 'r/science2');
+    similar.textContent = 'Different subreddit';
+    modern.d.querySelector('main').append(similar);
+    await pause(100);
+    check(!similar.classList.contains('raf-filtered'), 'Subreddit prefix matched a different community');
+    await until(() => undo(), 'Subreddit Undo missing');
+    undo().click();
+    await until(() => !modern.hidden(), 'Undo did not restore the subreddit post');
+    similar.remove();
+
+    check(!old.context(old.get('classic')), 'Old Reddit card did not get menu');
+    check(old.menu().some(button => button.textContent === 'Block r/space'), 'Old Reddit subreddit link not extracted');
+    old.choose('Block u/classicwriter');
+    await until(old.hidden, 'Old Reddit author filter did not hide its card');
+    await until(() => old.d.querySelector('.raf-quick-feedback button'), 'Old Reddit Undo missing');
+    const newOldCard = old.d.createElement('div');
+    newOldCard.innerHTML = oldCard.replace('t3_classic', 't3_dynamic').replace('ClassicWriter/', 'ClassicWriter2/');
+    old.d.querySelector('main').append(newOldCard.firstElementChild);
+    await pause(100);
+    check(!old.d.querySelector('[data-fullname="t3_dynamic"]').classList.contains('raf-filtered'), 'Author prefix matched a different username');
+
+    await old.open();
+    old.get('raf-tab-history').click();
+    old.d.querySelector('#raf-history button').click();
+    old.choose('Allow u/classicwriter');
+    await until(() => !old.hidden(), 'Allowlist did not override the author block');
+    old.get('raf-cancel').click();
+    await until(() => !old.d.querySelector('dialog'), 'Settings did not close');
+    old.context(old.get('classic'));
+    old.choose('Remove from allowlist: u/classicwriter');
+    await until(old.hidden, 'Removing allowlist rule did not restore block');
+
+    modern.get('native').focus();
+    modern.get('native').dispatchEvent(new modern.w.KeyboardEvent('keydown', {key: 'F10', altKey: true, shiftKey: true, bubbles: true, cancelable: true}));
+    check(modern.menu().some(button => button.textContent === 'Block u/writer'), 'Keyboard shortcut did not open post filters');
+    modern.context(text);
+    const before = modern.w.scrollY;
+    modern.w.scrollBy(0, 180);
+    await until(() => !modern.menu().length, 'Menu did not dismiss on scroll');
+    check(modern.w.scrollY > before, 'Context menu blocked scrolling');
+    modern.context(text);
+    modern.d.dispatchEvent(new modern.w.KeyboardEvent('keydown', {key: 'Escape', bubbles: true, cancelable: true}));
+    check(!modern.menu().length, 'Escape did not close menu');
+
+    modern.d.querySelector('shreddit-post').setAttribute('author', 'ClassicWriter');
+    await until(modern.hidden, 'Saved author filter did not propagate or react to a dynamic author change');
+    await modern.open();
+    for (const prefix of ['block', 'subreddits', 'users', 'white']) {
+        modern.get('raf-filter-tab-' + prefix).click();
+        check(!modern.get('raf-filter-panel-' + prefix).hidden, 'Missing separate settings list: ' + prefix);
+    }
+    const names = Array.from({length: 100000}, (_, i) => 'space' + i);
+    const backup = {format: 'unified-content-filter-backup', version: 1, shared: {blocklist: [], allowlist: []}, redditFilters: {subreddits: names, users: ['classicwriter']}};
+    modern.get('raf-tab-backup').click();
+    const picker = modern.get('raf-import-file'), transfer = new modern.w.DataTransfer();
+    transfer.items.add(new modern.w.File([JSON.stringify(backup)], 'reddit-backup.json'));
+    picker.files = transfer.files;
+    picker.dispatchEvent(new modern.w.Event('change'));
+    await until(() => modern.get('raf-save-status').textContent.includes('Review, then choose Save changes.'), 'Typed backup did not import');
+    modern.get('raf-filter-tab-subreddits').click();
+    const find = modern.get('raf-subreddits-search'), editor = modern.get('raf-subreddits');
+    find.value = names.at(-1);
+    find.dispatchEvent(new modern.w.Event('input'));
+    modern.get('raf-subreddits-next').click();
+    check(editor.value.slice(editor.selectionStart, editor.selectionEnd) === names.at(-1), 'Search did not reach the last subreddit');
+    check(editor.value.split('\n').length <= 1000, 'The subreddit page was not bounded');
+    modern.get('raf-save').click();
+    await until(() => !modern.d.querySelector('dialog'), 'Large typed lists did not save');
+    await modern.open();
+    let exported;
+    modern.w.URL.createObjectURL = blob => { exported = blob; return 'blob:fixture'; };
+    modern.w.HTMLAnchorElement.prototype.click = function () {};
+    modern.get('raf-export').click();
+    check(JSON.parse(await exported.text()).redditFilters.subreddits.length === names.length, 'Large typed lists did not re-export in full');
+    results.textContent = 'PASS: modern and Old Reddit menus, exact author and subreddit, native controls, keyword selection, cross-tab storage, Undo, History, keyboard, scrolling, and 100,000 Reddit-only entries.';
+    document.title = 'PASS — Reddit context filter tests';
+})().catch(error => {
+    results.textContent = error.stack;
+    document.title = 'FAIL — Reddit context filter tests';
+});
+</script>

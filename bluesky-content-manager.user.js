@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bluesky Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.06
+// @version      4.07
 // @description  Filter Bluesky by meaning with optional OpenRouter AI topics, preview and reveal controls, plus keyword, account, allowlist, and alt-text filters.
 // @author       Stuart Saddler
 // @license      MIT
@@ -146,13 +146,29 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
             if (names.indexOf(key) === -1) throw new Error(label + ' contains an unsupported field: ' + key + '. Remove unknown fields and credentials before importing.');
         }
     }
+    const redditFilterKeys = ['subreddits', 'users', 'allowSubreddits', 'allowUsers', 'legacySubreddits'];
+    function redditName(value, user) {
+        const name = String(value || '').trim().toLowerCase();
+        return (user ? /^[a-z0-9_-]{1,20}$/ : /^[a-z0-9_]{1,21}$/).test(name) ? name : '';
+    }
+    function validateRedditFilters(value) {
+        backupFields(value, redditFilterKeys, 'Reddit filters');
+        const result = {};
+        for (const key of redditFilterKeys) {
+            const user = key === 'users' || key === 'allowUsers';
+            result[key] = normalizeFilterList(Object.prototype.hasOwnProperty.call(value, key) ? value[key] : [], key);
+            if (result[key].some(name => !redditName(name, user))) throw new Error('Invalid Reddit name in ' + key + '.');
+        }
+        return result;
+    }
     function preservePlatformSettings(value) {
         if (value === undefined) return {};
         backupFields(value, ['bluesky', 'reddit'], 'Platforms');
         const result = {};
         for (const platform of Object.keys(value)) {
             const options = value[platform], copy = {};
-            backupFields(options, platform === 'bluesky' ? ['autoWhitelistEnabled', 'altTextEnforcementEnabled', 'ai'] : ['ai'], platform + ' settings');
+            backupFields(options, platform === 'bluesky' ? ['autoWhitelistEnabled', 'altTextEnforcementEnabled', 'ai'] : ['ai', 'filters'], platform + ' settings');
+            if (Object.prototype.hasOwnProperty.call(options, 'filters')) copy.filters = validateRedditFilters(options.filters);
             for (const key of ['autoWhitelistEnabled', 'altTextEnforcementEnabled']) {
                 if (Object.prototype.hasOwnProperty.call(options, key)) {
                     if (typeof options[key] !== 'boolean') throw new Error(platform + ' ' + key + ' must be true or false.');
@@ -205,7 +221,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         if (value.format === 'unified-content-filter-backup') {
             backupObject(value.shared, 'Shared filters');
             shared = validateSharedFilters(value.shared.blocklist, value.shared.allowlist);
+            // Older version-1 readers ignore top-level additions. Keep the extension out of platforms on disk.
+            if (value.platforms && value.platforms.reddit && Object.prototype.hasOwnProperty.call(value.platforms.reddit, 'filters'))
+                throw new Error('Reddit filters must use the top-level redditFilters field.');
             platforms = preservePlatformSettings(value.platforms);
+            if (Object.prototype.hasOwnProperty.call(value, 'redditFilters'))
+                platforms.reddit = Object.assign({}, platforms.reddit, { filters: validateRedditFilters(value.redditFilters) });
         } else if (value.format === 'bluesky-content-manager-settings') {
             source = 'bluesky';
             backupObject(value.settings, 'Bluesky settings');
@@ -230,6 +251,10 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         value.shared.aiTopics = sharedAITopics(shared, value.platforms) || [];
         for (const platform of Object.keys(value.platforms)) {
             if (value.platforms[platform].ai) delete value.platforms[platform].ai.topics;
+        }
+        if (value.platforms.reddit && value.platforms.reddit.filters) {
+            value.redditFilters = value.platforms.reddit.filters;
+            delete value.platforms.reddit.filters;
         }
         if (new TextEncoder().encode(JSON.stringify(value)).length > BACKUP_FILE_BYTES) throw new Error('The JSON backup exceeds 10 MiB. Shorten the lists before exporting.');
         return value;

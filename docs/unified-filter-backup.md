@@ -34,6 +34,12 @@ Blank entries are removed and duplicates retain their first position. Entries co
 
 Matching rules and allowlist precedence remain platform-specific. A candidate index reduces the number of existing rules evaluated; the original phrase and regular-expression checks still make the decision. Unicode case-folding, plurals, punctuation, and match order are checked against the previous implementation.
 
+## Reddit-only lists
+
+Version 4.07 adds an optional top-level `redditFilters` object to version 1 backups. It holds `subreddits`, `users`, `allowSubreddits`, `allowUsers`, and `legacySubreddits` arrays. Each array contains bare, case-insensitive names. The two shared lists continue to carry keywords and phrases. Bluesky 4.07 retains the Reddit lists when importing and re-exporting a file. Older readers import the shared lists and omit the Reddit-only fields when re-exporting.
+
+Reddit imports explicit empty Reddit lists as a request to clear them. An older unified backup without this extension keeps local Reddit-only rules and adds explicit Reddit rules found in its lists. The 10 MiB file limit includes the extension.
+
 ## Validation and release status
 
 Run `npm test`, `npm run check:syntax`, and `npm run benchmark` with Node 24. No package installation is required. The syntax check parses both complete production scripts as ES2015 using Node's bundled Acorn parser. Test harnesses may use modern Node/browser syntax.
