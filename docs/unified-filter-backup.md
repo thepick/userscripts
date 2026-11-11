@@ -40,6 +40,12 @@ Version 4.07 adds an optional top-level `redditFilters` object to version 1 back
 
 Reddit imports explicit empty Reddit lists as a request to clear them. An older unified backup without this extension keeps local Reddit-only rules and adds explicit Reddit rules found in its lists. The 10 MiB file limit includes the extension.
 
+## Bluesky-only account rules
+
+Bluesky 4.08 writes optional top-level `blueskyFilters` with `blockedAccounts` and `allowedAccounts`. Reddit 4.09 retains those lists when importing and re-exporting a unified file. The shared lists hold keywords and phrases. An explicit empty extension clears the account rules in the draft. A backup from the other updated script that contains only its own extension keeps local account rules and preserves shared entries as text.
+
+Earlier readers still load the shared lists. To carry both platforms' account rules through a re-export, use Bluesky 4.08 and Reddit 4.09 or later. Backups exclude the short-lived records used for Undo.
+
 ## Validation and release status
 
 Run `npm test`, `npm run check:syntax`, and `npm run benchmark` with Node 24. No package installation is required. The syntax check parses both complete production scripts as ES2015 using Node's bundled Acorn parser. Test harnesses may use modern Node/browser syntax.

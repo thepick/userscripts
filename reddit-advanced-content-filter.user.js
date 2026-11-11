@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.08
+// @version      4.09
 // @description  Filter by keyword, subreddit, or author with allowlist overrides, optional Liquid Ultra AI, history, and local backups.
 // @author       Stuart Saddler
 // @license      MIT
@@ -168,14 +168,32 @@
         }
         return result;
     }
+    const blueskyFilterKeys = ['blockedAccounts', 'allowedAccounts'];
+    function blueskyAccount(value, legacy) {
+        const raw = value.trim().toLowerCase(), name = raw.replace(/^@/, '');
+        const handle = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+        const valid = name.length <= 253 && (handle.test(name) || /^did:plc:[a-z2-7]{24}$/.test(name) ||
+            (name.startsWith('did:web:') && handle.test(name.slice(8))));
+        return valid || (legacy && /^@[a-z0-9._:-]+$/.test(raw)) ? '@' + name : '';
+    }
+    function validateBlueskyFilters(value) {
+        backupFields(value, blueskyFilterKeys, 'Bluesky filters');
+        const filters = {};
+        for (const key of blueskyFilterKeys) {
+            const entries = normalizeFilterList(Object.prototype.hasOwnProperty.call(value, key) ? value[key] : [], key);
+            filters[key] = Array.from(new Set(entries.map(term => blueskyAccount(term, key === 'allowedAccounts'))));
+            if (filters[key].includes('')) throw new Error('Use a Bluesky handle or DID in ' + key + '.');
+        }
+        return filters;
+    }
     function preservePlatformSettings(value) {
         if (value === undefined) return {};
         backupFields(value, ['bluesky', 'reddit'], 'Platforms');
         const result = {};
         for (const platform of Object.keys(value)) {
             const options = value[platform], copy = {};
-            backupFields(options, platform === 'bluesky' ? ['autoWhitelistEnabled', 'altTextEnforcementEnabled', 'ai'] : ['ai', 'filters'], platform + ' settings');
-            if (Object.prototype.hasOwnProperty.call(options, 'filters')) copy.filters = validateRedditFilters(options.filters);
+            backupFields(options, platform === 'bluesky' ? ['autoWhitelistEnabled', 'altTextEnforcementEnabled', 'ai', 'filters'] : ['ai', 'filters'], platform + ' settings');
+            if (Object.prototype.hasOwnProperty.call(options, 'filters')) copy.filters = platform === 'reddit' ? validateRedditFilters(options.filters) : validateBlueskyFilters(options.filters);
             for (const key of ['autoWhitelistEnabled', 'altTextEnforcementEnabled']) {
                 if (Object.prototype.hasOwnProperty.call(options, key)) {
                     if (typeof options[key] !== 'boolean') throw new Error(platform + ' ' + key + ' must be true or false.');
@@ -231,9 +249,13 @@
             // Older version-1 readers ignore top-level additions. Keep the extension out of platforms on disk.
             if (value.platforms && value.platforms.reddit && Object.prototype.hasOwnProperty.call(value.platforms.reddit, 'filters'))
                 throw new Error('Reddit filters must use the top-level redditFilters field.');
+            if (value.platforms && value.platforms.bluesky && Object.prototype.hasOwnProperty.call(value.platforms.bluesky, 'filters'))
+                throw new Error('Bluesky filters must use the top-level blueskyFilters field.');
             platforms = preservePlatformSettings(value.platforms);
             if (Object.prototype.hasOwnProperty.call(value, 'redditFilters'))
                 platforms.reddit = Object.assign({}, platforms.reddit, { filters: validateRedditFilters(value.redditFilters) });
+            if (Object.prototype.hasOwnProperty.call(value, 'blueskyFilters'))
+                platforms.bluesky = Object.assign({}, platforms.bluesky, { filters: validateBlueskyFilters(value.blueskyFilters) });
         } else if (value.format === 'bluesky-content-manager-settings') {
             source = 'bluesky';
             backupObject(value.settings, 'Bluesky settings');
@@ -262,6 +284,10 @@
         if (value.platforms.reddit && value.platforms.reddit.filters) {
             value.redditFilters = value.platforms.reddit.filters;
             delete value.platforms.reddit.filters;
+        }
+        if (value.platforms.bluesky && value.platforms.bluesky.filters) {
+            value.blueskyFilters = value.platforms.bluesky.filters;
+            delete value.platforms.bluesky.filters;
         }
         if (new TextEncoder().encode(JSON.stringify(value)).length > BACKUP_FILE_BYTES) throw new Error('The JSON backup exceeds 10 MiB. Shorten the lists before exporting.');
         return value;
@@ -1315,7 +1341,8 @@
         const options = backup.platforms.reddit || {};
         const value = { blocklist: backup.shared.blocklist, whitelist: backup.shared.allowlist };
         if (options.filters) return splitLegacyFilters(value, options.filters);
-        if (backup.source === 'bluesky') return splitLegacyFilters(value, currentFilters);
+        if (backup.source === 'bluesky' || (backup.platforms.bluesky && backup.platforms.bluesky.filters))
+            return splitLegacyFilters(value, currentFilters);
         splitLegacyFilters(value);
         if (!backup.source) {
             for (const key of redditFilterKeys) value.redditFilters[key] = Array.from(new Set(currentFilters[key].concat(value.redditFilters[key])));

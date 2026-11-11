@@ -36,7 +36,8 @@ test('settings validate types and normalize without interpreting markup',()=>{
   const api=load();assert.equal(typeof api.validateSettings,'function');
   const actual=api.validateSettings({filteredTerms:[' DOG ','dog','<b>'],manualWhitelistTerms:[' @Alice.Bsky.Social '],autoWhitelistEnabled:false,altTextEnforcementEnabled:true});
   assert.deepEqual(Array.from(actual.filteredTerms),['dog','<b>']);
-  assert.deepEqual(Array.from(actual.manualWhitelistTerms),['@alice.bsky.social']);
+  assert.deepEqual(Array.from(actual.manualWhitelistTerms),[]);
+  assert.deepEqual(Array.from(actual.blueskyFilters.allowedAccounts),['@alice.bsky.social']);
   assert.throws(()=>api.validateSettings({filteredTerms:{},manualWhitelistTerms:[],autoWhitelistEnabled:false,altTextEnforcementEnabled:false}));
   assert.throws(()=>api.validateSettings({filteredTerms:[],manualWhitelistTerms:[],autoWhitelistEnabled:'false',altTextEnforcementEnabled:false}));
 });

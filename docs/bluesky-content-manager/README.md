@@ -7,12 +7,19 @@ Filter Bluesky by keyword, phrase, account, or image alt text. Version 4.0 adds 
 ## Quick start
 
 1. Open **Configure Filters** in your userscript manager while on Bluesky.
-2. On **Filters**, enter one item per line. The blocklist checks words and phrases. The allowlist accepts `@handles` and content terms and takes priority over blocking.
+2. On **Filters**, enter one item per line under **Blocked keywords**, **Blocked accounts**, or **Allowlist**. Use `@handle` or a DID for an account exception. A plain word or phrase is a keyword exception. Prefix a literal `@` or `did:` with a backslash in the Allowlist editor.
 3. Use **Test a keyword rule** to try the draft lists, then choose **Save changes**.
 
 Single words match whole words and common English plurals. For example, `city` matches `cities`. Add irregular forms and verb forms separately if you want them matched. Multiword phrases match substrings and treat spaces, dashes, and underscores as equivalent separators. Matching also normalizes fullwidth letters and invisible word-splitting characters.
 
 Bluesky-specific options include hiding posts with missing image alt text and allowing posts from followed accounts. Followed-account overrides use Bluesky's public follows endpoint and the active account. Filtering pauses while the first follows list loads. Avatars, banners, small icons, and decorative images are excluded from missing-alt-text enforcement.
+
+## In-page actions
+
+- Right-click a post body, image, or permalink for account actions. Highlight a word or phrase in the post first to include keyword actions. Use **Shift+right-click** for the browser menu, or focus a post link and press **Alt+Shift+F10** for keyboard access.
+- **Block**, **Unblock**, **Allow**, and **Remove from allowlist** save immediately and offer **Undo**. Use **History > Blocked posts > Post filters** to change a rule after a post is hidden.
+- Account rules match the original author's full handle or account ID. When Bluesky displays both forms, the script can match either. A handle-based rule follows the handle if it changes owners. Use a DID when a rule needs to stay with the same account across a handle change.
+- Manual account, keyword, and followed-account exceptions take priority over blocking and AI. Explicit account entries in older local lists migrate to account rules. Bare terms in the keyword blocklist keep their text matching.
 
 ## Optional AI filtering
 
@@ -27,7 +34,7 @@ Visible posts take priority. Checks can include nearby loaded posts, so lookahea
 - **History** separates posts blocked in the current session from AI matches. Reloading clears session history.
 - **Backups & reset** lets you export settings or load a backup for review before saving. Backups from the original Bluesky Content Manager and the separate AI build use the same supported format. They exclude the OpenRouter key.
 - Updating the existing Greasy Fork installation retains saved filters. To move preferences from the separate AI build, export there, import the backup in v4.0, and save. Enter the OpenRouter key in the new installation if needed.
-- **Clear remembered blocks** resets the local keyword and alt-text decisions. **Clear AI memory and Keep overrides** resets cached AI decisions and Keep overrides while retaining daily usage.
+- **Clear remembered blocks** resets the local keyword, account, and alt-text decisions. **Clear AI memory and Keep overrides** resets cached AI decisions and Keep overrides while retaining daily usage.
 
 ## Unified backups
 
