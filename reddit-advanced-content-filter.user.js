@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.07
+// @version      4.08
 // @description  Filter by keyword, subreddit, or author with allowlist overrides, optional Liquid Ultra AI, history, and local backups.
 // @author       Stuart Saddler
 // @license      MIT
@@ -103,7 +103,8 @@
 @media(pointer:coarse){.raf-dialog button,.raf-dialog .raf-check{min-height:44px}.raf-dialog textarea,.raf-dialog input:not([type="checkbox"]):not([type="radio"]):not([type="file"]){min-height:44px;font-size:16px}}
 `;
 
-    const postSelector = 'article, div[data-testid="post-container"], shreddit-post, .thing.link';
+    const redditPostCard = 'div[data-testid="post-container"], shreddit-post, .thing.link';
+    const postSelector = 'article, ' + redditPostCard;
     const textAreas = '[slot="text-body"], [data-testid="post-text-container"], .usertext-body, .md';
     const interfaceText = '[data-reddit-filter-ui], button, [role="button"], time, .score, .midcol, .rank, .buttons, .live-timestamp, a[data-click-id="comments"], a.bylink, a.comments, [data-testid="post-vote-container"], [data-testid="comment-count"], [slot="comment-count"]';
     const settingsKey = 'rafaiSettingsV1', cacheKey = 'rafaiBlockedCacheV1';
@@ -1117,6 +1118,8 @@
     }
 
     const postTextSurface = textAreas + ', [slot="title"], [data-testid="post-title"], a.title, h1, h2, h3, h4, h5, h6';
+    const postSurfaceLink = 'a.title, a.thumbnail, a[data-click-id="body"], a[data-testid="post-title"], [data-testid="post-title"] a, a[slot="title"], [slot="title"] a, a[slot="full-post-link"], a[slot="post-media-container"], [slot="post-media-container"] a';
+    const nativeContextControls = interfaceText + ', input, textarea, select, video, audio, [role="textbox"], shreddit-comment, .thing.comment';
     let quickMenu = null, quickAnchor = null, quickFeedback = null;
 
     function selectedKeyword(post, target, selection) {
@@ -1124,7 +1127,9 @@
         const range = selection.getRangeAt(0);
         const surfaceAt = node => {
             const element = node.nodeType === 1 ? node : node.parentElement;
-            if (!element || element.closest(interfaceText + ', .tagline, [slot="credit-bar"], shreddit-comment, .thing.comment')) return null;
+            if (!element) return null;
+            const control = element.closest(interfaceText + ', .tagline, [slot="credit-bar"], shreddit-comment, .thing.comment');
+            if (control && !control.matches(postSurfaceLink)) return null;
             return element.closest(postTextSurface);
         };
         const surface = surfaceAt(range.startContainer);
@@ -1139,6 +1144,11 @@
         if (subreddit) targets.push({ term: subreddit, label: 'r/' + subreddit, block: 'subreddits', allow: 'allowSubreddits' });
         if (author) targets.push({ term: author, label: 'u/' + author, block: 'users', allow: 'allowUsers' });
         return targets;
+    }
+
+    function quickPostTargets(post, keyword) {
+        if (!post || (!postMetadata(post).matches(redditPostCard) && !getPostIdentity(post))) return [];
+        return quickTargets(getSubreddit(post), getAuthor(post), keyword);
     }
 
     function closeQuickMenu(restoreFocus) {
@@ -1222,19 +1232,21 @@
             closeQuickMenu(false);
             const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
             const target = path.find(node => node.nodeType === 1 && node.isConnected);
-            if (!target || event.defaultPrevented || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey ||
-                path.some(node => node.nodeType === 1 && (node.isContentEditable ||
-                    node.matches(interfaceText + ', input, textarea, select, video, audio, img, [role="textbox"], shreddit-comment, .thing.comment')))) return;
+            if (!target || event.defaultPrevented || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (path.some(node => node.nodeType === 1 && (node.isContentEditable ||
+                (node.matches(nativeContextControls) && !node.matches(postSurfaceLink))))) return;
             const post = path.reduce((found, node) => found || (node.nodeType === 1 && findPost(node)), null);
-            if (!post || !getPostIdentity(post)) return;
+            if (!post) return;
             const keyword = selectedKeyword(post, target, window.getSelection());
-            if (!keyword && path.some(node => node.nodeType === 1 && node.matches('a[href]'))) return;
-            const targets = quickTargets(getSubreddit(post), getAuthor(post), keyword);
+            const link = path.find(node => node.nodeType === 1 && node.matches('a[href]'));
+            if (!keyword && link && !link.matches(postSurfaceLink)) return;
+            const targets = quickPostTargets(post, keyword);
             if (!targets.length) return;
             event.preventDefault();
+            event.stopPropagation();
             const rect = target.getBoundingClientRect();
             openQuickMenu(targets, event.clientX || rect.left, event.clientY || rect.bottom, document.activeElement);
-        });
+        }, true);
         document.addEventListener('pointerdown', event => {
             if (quickMenu && !quickMenu.contains(event.target)) closeQuickMenu(false);
         });
@@ -1244,8 +1256,7 @@
             const target = event.target;
             if (!target || target.nodeType !== 1 || target.isContentEditable || target.closest('input, textarea, select, [role="textbox"], shreddit-comment, .thing.comment')) return;
             const post = findPost(target);
-            if (!post || !getPostIdentity(post)) return;
-            const targets = quickTargets(getSubreddit(post), getAuthor(post), selectedKeyword(post, target, window.getSelection()));
+            const targets = quickPostTargets(post, post && selectedKeyword(post, target, window.getSelection()));
             if (!targets.length) return;
             event.preventDefault();
             const rect = target.getBoundingClientRect();

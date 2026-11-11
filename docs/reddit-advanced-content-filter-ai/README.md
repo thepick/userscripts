@@ -15,7 +15,7 @@ If you update an existing installation from version 3.2.0, your saved blocklist 
 
 ## In-page actions
 
-- Right-click inside a post to open Reddit Content Manager's filter actions. Highlight text in the title or body first to include a word or phrase. Right-click links without a selection to use the browser's link menu.
+- Right-click the post title, image, or body to open Reddit Content Manager's filter actions. Highlight text in the title or body first to include a word or phrase. Use Shift+right-click for the browser menu. Ordinary links in post text and playback controls keep their usual menu.
 - The menu offers **Block**, **Unblock**, **Allow**, and **Remove from allowlist** for the applicable rules. Each action saves immediately and offers **Undo**. Focus a link inside a post and press **Alt+Shift+F10** to open the filter actions from the keyboard.
 - Find a hidden card in **History > Blocked posts** and choose **Post filters**. A card may still match another rule after you remove one.
 

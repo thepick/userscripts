@@ -18,7 +18,10 @@ async function until(condition, message) {
 const modernCard = `
     <article><shreddit-post id="t3_modern" author="Writer" subreddit-prefixed-name="r/Science">
         <div slot="credit-bar"><a href="/r/Science/">r/Science</a></div>
-        <h2 slot="title">Space telescopes</h2>
+        <a id="modern-title" slot="title" href="/r/Science/comments/modern/" role="button"><span>Space telescopes</span></a>
+        <a id="modern-overlay" slot="full-post-link" href="/r/Science/comments/modern/">Open post</a>
+        <a slot="post-media-container" href="/media"><img id="modern-image" alt="A telescope"></a>
+        <button id="modern-control" type="button">Save post</button>
         <div slot="text-body"><p id="modern">Rare <em>space</em> signal</p><a id="native" href="/user/other/">A reference</a></div>
         <shreddit-crosspost><a data-testid="post_author_link" href="/user/crosspost/">Crosspost author</a></shreddit-crosspost>
         <textarea id="editable"></textarea>
@@ -26,7 +29,7 @@ const modernCard = `
 const oldCard = `
     <div class="thing link" data-fullname="t3_classic">
         <p class="tagline"><a class="author" href="https://old.reddit.com/user/ClassicWriter/">ClassicWriter</a> in <a class="subreddit" href="https://old.reddit.com/r/Space/">space</a></p>
-        <a class="title" href="/r/Space/comments/classic/">A comet</a>
+        <a id="classic-title" class="title" href="/r/Space/comments/classic/">A comet</a>
         <div class="usertext-body"><div class="md"><p id="classic">Telescope logs</p></div></div>
     </div>`;
 
@@ -67,7 +70,7 @@ const oldCard = `
         script.textContent = source;
         d.body.append(script);
         await until(() => settings && (listeners.get('rafaiFilterEditSignal') || []).some(listener => listener.sender === w), 'Startup or listener failed');
-        const context = target => target.dispatchEvent(new w.MouseEvent('contextmenu', {bubbles: true, cancelable: true, composed: true, clientX: 180, clientY: 100}));
+        const context = (target, options) => target.dispatchEvent(new w.MouseEvent('contextmenu', {bubbles: true, cancelable: true, composed: true, clientX: 180, clientY: 100, ...options}));
         const menu = () => Array.from(d.querySelectorAll('.raf-quick-menu button'));
         const choose = label => {
             const button = menu().find(item => item.textContent === label);
@@ -79,7 +82,30 @@ const oldCard = `
     }
 
     const modern = await openFrame(modernCard), old = await openFrame(oldCard);
-    check(modern.context(modern.get('native')), 'Unselected links retain native right-click');
+    check(modern.context(modern.get('native')), 'Inline links retain native right-click');
+    const titleLink = modern.get('modern-title'), title = titleLink.firstElementChild;
+    title.addEventListener('contextmenu', event => event.stopPropagation());
+    check(!modern.context(title), 'Modern linked title opens the filter menu before Reddit handles the event');
+    const titleRange = modern.d.createRange(), titleSelection = modern.w.getSelection();
+    titleRange.selectNodeContents(title);
+    titleSelection.addRange(titleRange);
+    check(!modern.context(title) && modern.menu().some(button => button.textContent === 'Block “space telescopes”'), 'Selected text in a linked title is available as a keyword');
+    titleSelection.removeAllRanges();
+    const titleWrapper = modern.d.createElement('h2');
+    titleWrapper.slot = 'title';
+    titleLink.replaceWith(titleWrapper);
+    titleWrapper.append(titleLink);
+    titleLink.removeAttribute('slot');
+    check(!modern.context(title), 'A link nested inside the title slot opens the filter menu');
+    check(!modern.context(modern.get('modern-overlay')), 'Full-post overlay opens the filter menu');
+    check(!modern.context(modern.get('modern-image')), 'Post image opens the filter menu');
+    check(!old.context(old.get('classic-title')), 'Old Reddit linked title opens the filter menu');
+    check(modern.context(title, {shiftKey: true}), 'Shift-right-click leaves the native menu available');
+    check(modern.context(modern.get('modern-control')), 'Post controls retain native right-click');
+    const card = modern.d.querySelector('shreddit-post');
+    card.removeAttribute('id');
+    check(!modern.context(modern.get('modern')), 'A verified Reddit card works before it has a post ID');
+    card.id = 't3_modern';
     check(modern.context(modern.get('editable')), 'Text inputs retain native right-click');
     check(modern.context(modern.d.body), 'Off-post right-click remains native');
     const shadowWidget = modern.d.createElement('div');
@@ -183,7 +209,7 @@ const oldCard = `
     modern.w.HTMLAnchorElement.prototype.click = function () {};
     modern.get('raf-export').click();
     check(JSON.parse(await exported.text()).redditFilters.subreddits.length === names.length, 'Large typed lists did not re-export in full');
-    results.textContent = 'PASS: modern and Old Reddit menus, exact author and subreddit, native controls, keyword selection, cross-tab storage, Undo, History, keyboard, scrolling, and 100,000 Reddit-only entries.';
+    results.textContent = 'PASS: modern and Old Reddit menus on linked titles, images, overlays, and post bodies. Native controls and Shift bypass, keyword selection, exact matching, cross-tab storage, Undo, History, keyboard, scrolling, and 100,000 Reddit-only entries also passed.';
     document.title = 'PASS — Reddit context filter tests';
 })().catch(error => {
     results.textContent = error.stack;
