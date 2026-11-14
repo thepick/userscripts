@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Content Manager
 // @namespace    https://greasyfork.org/en/users/567951-stuart-saddler
-// @version      4.09
+// @version      4.10
 // @description  Filter by keyword, subreddit, or author with allowlist overrides, optional Liquid Ultra AI, history, and local backups.
 // @author       Stuart Saddler
 // @license      MIT
@@ -866,10 +866,23 @@
         return contentMatch ? Object.assign({ source: 'content' }, contentMatch) : null;
     }
 
+    function isPostDetailPage() {
+        return /^\/(?:(?:r|user|u)\/[^/]+\/)?comments\/[a-z0-9]+(?:\/|$)/i.test(location.pathname);
+    }
+
+    function skipPostFiltering(post) {
+        if (!isPostDetailPage()) return false;
+        postStates.delete(post);
+        if (post.classList.contains('raf-filtered')) post.classList.remove('raf-filtered');
+        clearAIPanel(post);
+        return true;
+    }
+
     const processPost = runAsync(function* (post) {
         if (!post.isConnected) return;
         const epoch = ruleEpoch, changes = postChanges.get(post) || 0;
         yield contextReady;
+        if (!post.isConnected || skipPostFiltering(post)) return;
         if (epoch !== ruleEpoch) { queuePost(post); return; }
         if (!hasBlockRules && !settings.ai.enabled) { post.classList.remove('raf-filtered'); clearAIPanel(post); return; }
         const data = getPostData(post), { title, content, subreddit, author, identity, url } = data;
@@ -880,7 +893,7 @@
         }
         clearAIPanel(post);
         const context = ruleContext, hash = canRemember && identity ? (yield fingerprint(signature)) : '';
-        if (!post.isConnected || epoch !== ruleEpoch || changes !== (postChanges.get(post) || 0)) return;
+        if (!post.isConnected || skipPostFiltering(post) || epoch !== ruleEpoch || changes !== (postChanges.get(post) || 0)) return;
         const memoryKey = identity && canRemember ? context + ':' + identity.id : '', cached = memoryKey && remembered.get(memoryKey);
         const decision = cached && cached.fingerprint === hash && Date.now() - cached.at < cacheAge ?
             { source: cached.source, trigger: cached.trigger, rule: cached.rule } : filterDecision(title, content, subreddit, author);
@@ -947,13 +960,20 @@
     });
 
     function queuePost(post) {
-        if (!post || !post.isConnected || (!hasBlockRules && !settings.ai.enabled && !post.classList.contains('raf-filtered') && !post.classList.contains('rafai-ai-hidden'))) return;
+        if (!post || !post.isConnected || skipPostFiltering(post)) return;
+        if (!hasBlockRules && !settings.ai.enabled && !post.classList.contains('raf-filtered') && !post.classList.contains('rafai-ai-hidden')) return;
         postChanges.set(post, (postChanges.get(post) || 0) + 1); pendingPosts.add(post);
         if (!processing) { processing = true; setTimeout(() => void processPostsBatch(), 0); }
     }
 
     function collectPosts(node) {
         if (node.nodeType !== 1 || node.closest('[data-reddit-filter-ui]')) return;
+        if (isPostDetailPage()) {
+            const hidden = '.raf-filtered, .rafai-ai-hidden';
+            if (node.matches(hidden)) skipPostFiltering(node);
+            node.querySelectorAll(hidden).forEach(skipPostFiltering);
+            return;
+        }
         queuePost(findPost(node)); node.querySelectorAll(postSelector).forEach(post => queuePost(findPost(post)));
     }
 
