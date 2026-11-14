@@ -5,7 +5,7 @@ function load(){
  settingsValue:()=>settings,enableAltRule(){altTextEnforcementEnabled=true;},decidePost,
  keys:async function(data){settings.ai={...aiDefaults,enabled:true,scope:'all',topics:['Politics']};aiKey='dummy';currentUserDid='did:plc:test';aiText=()=> 'same bounded excerpt with enough text';aiImages=()=>[];aiScope=()=>true;aiAllowed=()=>false;aiEnvironment=()=> 'feed';aiValid=()=>true;watchAIPost=()=>{};isAIVisible=()=>false;keptAI=async()=>false;const inputs=[];digest=async value=>{inputs.push(value);return 'a'.repeat(64)};await scheduleAI({},data,decisionContext);return inputs;},
  rendering(){settings.ai={...aiDefaults,enabled:true,mode:'preview'};aiValid=()=>valid;getPostData=()=>({});recordBlockedPost=()=>{};scheduleMenu=()=>{};scheduleAILoadGuard=()=>{};updateAIStatus=()=>{};element=(tag,cls,text)=>makeElement(tag,text);enqueuePost=()=>{enqueued++};},
- validity(post,data,text){currentUserDid='did:plc:test';getActiveAccount=()=>currentUserDid;readSiteState=()=>({});aiEnvironment=()=> 'feed';aiScope=()=>true;getPostData=()=>data;aiText=()=>currentText;aiImages=()=>[];return {post,text,images:[],snapshot:JSON.stringify(data),generation:aiGeneration,context:decisionContext,environment:'feed'};},
+ validity(post,data,text){currentUserDid='did:plc:test';getActiveAccount=()=>currentUserDid;readSiteState=()=>({});aiEnvironment=()=> 'feed';aiScope=()=>true;getPostData=()=>data;aiText=()=>currentText;aiImages=()=>[];return {post,text,model:settings.ai.model,images:[],snapshot:JSON.stringify(data),generation:aiGeneration,context:decisionContext,environment:'feed'};},
  async startObservers(){initializeSettings=()=>{};loadDecisionCache=()=>{};loadAI=()=>{};observePosts=()=>{};refreshEnvironment=async()=>{};updateMenuCommand=()=>{};rescanPosts=()=>{for(const post of testPosts)watchAIPost(post)};await main();},
  setScope(value){settings.ai={...aiDefaults,scope:value};},queued:()=>[...aiJobs.values()].map(j=>j.post.id),
  async queueProbe(post){settings.ai={...aiDefaults,enabled:true,topics:['Politics']};aiBusy=true;aiKey='dummy';aiText=()=> 'An election headline long enough for checking';aiImages=()=>[];aiScope=()=>true;aiAllowed=()=>false;aiEnvironment=()=> 'feed';aiValid=()=>true;await scheduleAI(post,{identity:{url:'https://bsky.app/profile/test/post/abc'}},decisionContext);}
@@ -49,7 +49,7 @@ test('long post evidence retains its head and tail while legacy Keep text stays 
 });
 test('full relevant content changes automatic and new Keep keys even outside the bounded excerpt',async()=>{
  const data={identity:{url:'https://bsky.app/profile/test/post/abc'},general:'first'};const a=await load().c.keys(data),b=await load().c.keys({...data,general:'changed'});
- assert.notEqual(a[0],b[0]);assert.notEqual(a[1],b[1]);assert.equal(a[2],b[2]);
+ assert.notEqual(a[0],b[0]);assert.notEqual(a[1],b[1]);assert.notEqual(a[2],b[2]);assert.equal(a[3],b[3]);
 });
 test('async validity rejects changed AI evidence before provider submission',()=>{
  const {c}=load(),p=post(),data={};c.currentText='before';const job=c.validity(p,data,'before');assert.equal(c.aiValid(job),true);c.currentText='after';assert.equal(c.aiValid(job),false);
@@ -75,4 +75,3 @@ test('preview Hide survives a rescan and stale preview actions cannot hide chang
  const job={post:p,key:'key',keepKey:'keep',url:'url',topics:['Politics']},result={decision:'hide',evidence:'match'};c.renderAI(job,result);p.panel.children[1].click({preventDefault(){},stopPropagation(){}});c.resetAI();c.renderAI(job,result);assert(classes.has('bcm-ai-hidden'));
  c.resetAI();c.valid=true;c.renderAI({...job,key:'newkey',keepKey:'newkeep'},result);c.valid=false;p.panel.children[1].click({preventDefault(){},stopPropagation(){}});assert(!classes.has('bcm-ai-hidden'));assert.equal(c.enqueued,1);
 });
-

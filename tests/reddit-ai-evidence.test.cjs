@@ -86,7 +86,7 @@ test('unchanged photo Keep text remains byte-compatible with the previous releas
 });
 test('full relevant content affects automatic and new Keep keys; old Keep lookup stays compatible',async()=>{
  const before=await load().keyProbe('unseen middle A'),after=await load().keyProbe('unseen middle B');
- assert.notEqual(before[0],after[0]);assert.notEqual(before[1],after[1]);assert.equal(before[2],after[2]);
+ assert.notEqual(before[0],after[0]);assert.notEqual(before[1],after[1]);assert.notEqual(before[2],after[2]);assert.equal(before[3],after[3]);
 });
 test('matcher update invalidates old persistent literal decisions without altering lists',async()=>{
  const c=load(),old=createHash('sha256').update(JSON.stringify([1,['cat'],['dog']])).digest('hex');await c.setRules(['cat'],['dog']);assert.notEqual(c.ruleContextValue(),old);

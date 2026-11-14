@@ -35,9 +35,11 @@ In v0.4.2, choose **Download diagnostic log** from the warning or the userscript
 
 Bluesky 4.05 and Reddit 4.04 support one shared blocklist, allowlist, and AI-prompt backup with separate platform settings. See the [format, compatibility, limits, and validation results](docs/unified-filter-backup.md). The 100,000-entry ceiling remains provisional while editor performance is evaluated.
 
+Download the [sports filter preset](docs/sports-filter-backup.json) for either script. Importing this preset replaces the draft keyword lists and AI topics. Export your existing settings first, or copy selected terms into your current blocklist if you want to keep other topics.
+
 ## AI filtering
 
-The Reddit and Bluesky AI filters use Liquid Ultra for topic filtering and Gemini 2.5 Flash-Lite for optional picture scanning, with Preview/Hide actions and review history. They retain the original filters and whitelist overrides. New installations start with AI disabled; configure your own OpenRouter key and topics. Keys stay in userscript-manager storage and are excluded from settings exports.
+The Reddit and Bluesky AI filters offer Liquid D1 Ultra or Baseten Mammoth 1 for topic filtering and use Gemini 2.5 Flash-Lite for optional picture scanning, with Preview/Hide actions and review history. They retain the original filters and whitelist overrides. New installations start with AI disabled; configure your own OpenRouter key and topics. Keys stay in userscript-manager storage and are excluded from settings exports.
 
 When picture analysis is enabled, Gemini receives eligible pictures and returns descriptions; Liquid receives the post text and those descriptions, applies topic exceptions, and makes the final filtering decision. Gemini receives no original post text or user topics, and Liquid receives no image data. Both stages use the existing OpenRouter key and count toward the existing daily limits. The key must permit both models. Failed or incomplete scans keep posts visible. Updating preserves saved preferences and credentials; the existing picture toggle controls Gemini.
 
