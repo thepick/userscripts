@@ -4,6 +4,10 @@ My browser userscripts, published on [Greasy Fork](https://greasyfork.org/en/use
 
 The initial imports preserved the Greasy Fork downloads exactly, including their versions and metadata. A source-location comment was then added to each script to verify automatic synchronization; behavior and versions were unchanged. This repository includes the public scripts and additional unlisted scripts supplied by the author for public hosting. Install from the existing Greasy Fork listings to keep receiving updates through Greasy Fork.
 
+## Content Manager v5.0
+
+Reddit Content Manager and Bluesky Content Manager now use WebAssembly for keyword filtering, with a JavaScript fallback. Existing Greasy Fork installations keep their settings when they update. [Rust source and build instructions](docs/content-manager-wasm/README.md)
+
 ## Scripts
 
 | Script | Initial/imported version | Source | Greasy Fork |
